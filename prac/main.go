@@ -4,6 +4,7 @@
 se puede compilar con "go build" en el directorio donde resida main.go
 
 versión: 1.0
+Cambio
 
 curso: 			**rellenar**
 asignatura: 	**antes de**
