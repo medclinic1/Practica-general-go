@@ -304,6 +304,10 @@ func (s *server) updateData(req api.Request) api.Response {
 	if err := s.db.Put("userdata", []byte(req.Username), []byte("datos.zip.enc")); err != nil {
 		return api.Response{Success: false, Message: "Error al actualizar datos del usuario"}
 	}
+	e := os.Remove("datos.zip.enc")
+	if e != nil {
+		log.Fatal(e)
+	}
 
 	return api.Response{Success: true, Message: "Datos de usuario actualizados"}
 }
