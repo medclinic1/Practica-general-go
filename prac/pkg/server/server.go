@@ -28,37 +28,6 @@ func check(e error) {
 	}
 }
 
-func cifrarStringEnArchivo(textoEnClaro string /* nombreArchivoDatos string, */, key []byte, iv []byte) (string, error) {
-	lectorTextoEnClaro := strings.NewReader(textoEnClaro)
-
-	var buffer bytes.Buffer
-
-	//archivoDestinoComprimidoyCifrado, err := os.Create(nombreArchivoDatos)
-	//check(err)
-
-	var escritorConCifrado cipher.StreamWriter
-	var err error
-	escritorConCifrado.S, err = obtenerAESconCTR(key, iv)
-	if err != nil {
-		return "", err
-	}
-	//escritorConCifrado.W = archivoDestinoComprimidoyCifrado
-	escritorConCifrado.W = &buffer
-	//check(err)
-
-	escritorConCompresionyCifrado := zlib.NewWriter(escritorConCifrado)
-
-	_, err = io.Copy(escritorConCompresionyCifrado, lectorTextoEnClaro)
-	if err != nil {
-		return "", err
-	}
-	//check(err)
-
-	escritorConCompresionyCifrado.Close()
-	//archivoDestinoComprimidoyCifrado.Close()
-	return buffer.String(), nil
-}
-
 func cifrarString(textoEnClaro string, key []byte, iv []byte) (string, error) {
 	lectorTextoEnClaro := strings.NewReader(textoEnClaro)
 
@@ -82,28 +51,6 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) (string, error) {
 	escritorConCompresionyCifrado.Close()
 
 	return buffer.String(), nil
-}
-
-func descifrarArchivoEnString(nombreArchivoDatos string, key []byte, iv []byte) string {
-	archivoOrigenComprimidoCifrado, err := os.Open(nombreArchivoDatos)
-	check(err)
-
-	var bufferDeBytesParaDescifraryDescomprimir bytes.Buffer
-
-	var lectorConDescifrado cipher.StreamReader
-	lectorConDescifrado.S, err = obtenerAESconCTR(key, iv)
-	lectorConDescifrado.R = archivoOrigenComprimidoCifrado
-	check(err)
-
-	lectorConDescifradoDescompresion, err := zlib.NewReader(lectorConDescifrado)
-	check(err)
-
-	_, err = io.Copy(&bufferDeBytesParaDescifraryDescomprimir, lectorConDescifradoDescompresion)
-	check(err)
-	archivoOrigenComprimidoCifrado.Close()
-
-	textoEnClaroDescifrado := bufferDeBytesParaDescifraryDescomprimir.String()
-	return textoEnClaroDescifrado
 }
 
 func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
