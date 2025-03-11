@@ -8,6 +8,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,46 +29,59 @@ func check(e error) {
 	}
 }
 
-func cifrarStringEnArchivo(textoEnClaro string, nombreArchivoDatos string, key []byte, iv []byte) {
+func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
 	lectorTextoEnClaro := strings.NewReader(textoEnClaro)
 
-	archivoDestinoComprimidoyCifrado, err := os.Create(nombreArchivoDatos)
-	check(err)
+	var buffer bytes.Buffer
 
-	var escritorConCifrado cipher.StreamWriter
+	escritorConCifrado := cipher.StreamWriter{}
+	var err error
 	escritorConCifrado.S, err = obtenerAESconCTR(key, iv)
-	escritorConCifrado.W = archivoDestinoComprimidoyCifrado
-	check(err)
+	if err != nil {
+		return nil, err
+	}
+	escritorConCifrado.W = &buffer
 
 	escritorConCompresionyCifrado := zlib.NewWriter(escritorConCifrado)
 
 	_, err = io.Copy(escritorConCompresionyCifrado, lectorTextoEnClaro)
-	check(err)
+	if err != nil {
+		return nil, err
+	}
 
 	escritorConCompresionyCifrado.Close()
-	archivoDestinoComprimidoyCifrado.Close()
+
+	//return buffer.String(), nil
+	return []byte(base64.StdEncoding.EncodeToString(buffer.Bytes())), nil
 }
 
-func descifrarArchivoEnString(nombreArchivoDatos string, key []byte, iv []byte) string {
-	archivoOrigenComprimidoCifrado, err := os.Open(nombreArchivoDatos)
-	check(err)
+func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
+	lectorTextoCifrado := strings.NewReader(encryptedData)
 
 	var bufferDeBytesParaDescifraryDescomprimir bytes.Buffer
 
 	var lectorConDescifrado cipher.StreamReader
+	var err error
 	lectorConDescifrado.S, err = obtenerAESconCTR(key, iv)
-	lectorConDescifrado.R = archivoOrigenComprimidoCifrado
-	check(err)
+	if err != nil {
+		return "", err
+	}
+	lectorConDescifrado.R = lectorTextoCifrado
 
 	lectorConDescifradoDescompresion, err := zlib.NewReader(lectorConDescifrado)
-	check(err)
+	if err != nil {
+		return "", err
+	}
 
 	_, err = io.Copy(&bufferDeBytesParaDescifraryDescomprimir, lectorConDescifradoDescompresion)
-	check(err)
-	archivoOrigenComprimidoCifrado.Close()
+	if err != nil {
+		return "", err
+	}
 
+	lectorConDescifradoDescompresion.Close()
 	textoEnClaroDescifrado := bufferDeBytesParaDescifraryDescomprimir.String()
-	return textoEnClaroDescifrado
+	decoded, err := base64.StdEncoding.DecodeString(textoEnClaroDescifrado)
+	return string(decoded), nil
 }
 
 func obtenerAESconCTR(key []byte, iv []byte) (cipher.Stream, error) {
@@ -239,7 +253,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 
 // fetchData verifica el token y retorna el contenido del namespace 'userdata'.
 func (s *server) fetchData(req api.Request) api.Response {
-	//Leer key e iv de los archivos creados
+	// Leer key e iv de los archivos creados
 	key, err := os.ReadFile("key.txt")
 	check(err)
 	iv, err2 := os.ReadFile("iv.txt")
@@ -254,34 +268,33 @@ func (s *server) fetchData(req api.Request) api.Response {
 	}
 
 	// Obtenemos los datos asociados al usuario desde 'userdata'
-	//Desencriptar aquí rawData
-	//Aquí
-	//Aquí
-	//Aquí
 	rawData, err := s.db.Get("userdata", []byte(req.Username))
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al obtener datos del usuario"}
 	}
 
-	//----------DESCIFRADO-----------
-	textoEnClaroDescifrado := descifrarArchivoEnString(string(rawData), key, iv)
+	// Desencriptar aquí rawData
+	textoEnClaroDescifrado, err := descifrarString(string(rawData), key, iv)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al descifrar datos del usuario"}
+	}
 
 	return api.Response{
 		Success: true,
 		Message: "Datos privados de " + req.Username,
-		Data:    string(textoEnClaroDescifrado),
+		Data:    textoEnClaroDescifrado,
 	}
 }
 
 // updateData cambia el contenido de 'userdata' (los "datos" del usuario)
 // después de validar el token.
 func (s *server) updateData(req api.Request) api.Response {
-
-	//Leer key e iv de los archivos creados
+	// Leer key e iv de los archivos creados
 	key, err := os.ReadFile("key.txt")
 	check(err)
 	iv, err2 := os.ReadFile("iv.txt")
 	check(err2)
+
 	// Chequeo de credenciales
 	if req.Username == "" || req.Token == "" {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
@@ -290,23 +303,16 @@ func (s *server) updateData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
 	}
 
-	// Escribimos el nuevo dato en 'userdata'
-
 	// Encriptar aquí req.Data.
-	//Aquí
-	//Aquí
-	//Aquí
-	//Aquí
-	//----------CIFRADO--------------
-	nombreArchivoDatos := "datos.zip.enc"
-	cifrarStringEnArchivo(req.Data, nombreArchivoDatos, key, iv)
-
-	if err := s.db.Put("userdata", []byte(req.Username), []byte("datos.zip.enc")); err != nil {
-		return api.Response{Success: false, Message: "Error al actualizar datos del usuario"}
+	encryptedData, err := cifrarString(req.Data, key, iv)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al cifrar datos del usuario"}
 	}
-	e := os.Remove("datos.zip.enc")
-	if e != nil {
-		log.Fatal(e)
+	fmt.Println("Encriptados: ", encryptedData, "Desencriptados: ", req.Data)
+
+	// Escribimos el nuevo dato en 'userdata'
+	if err := s.db.Put("userdata", []byte(req.Username), []byte(encryptedData)); err != nil {
+		return api.Response{Success: false, Message: "Error al actualizar datos del usuario"}
 	}
 
 	return api.Response{Success: true, Message: "Datos de usuario actualizados"}
