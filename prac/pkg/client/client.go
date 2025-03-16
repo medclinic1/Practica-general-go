@@ -1,10 +1,23 @@
 // El paquete client contiene la lógica de interacción con el usuario
 // así como de comunicación con el servidor.
+
+// Canal tiene que estar cifrado con SSL
+// Usuario con hash y salt
+// Comprobar si el usuario se sabe la contraseña
+// Introducir en el cliente para que se pueda conectar con SSL
+// Meter en el cliente el https
+
+
 package client
 
 import (
 	"bytes"
+	"compress/zlib"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
 	"encoding/json"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +26,8 @@ import (
 
 	"prac/pkg/api"
 	"prac/pkg/ui"
+	
+	
 )
 
 // client estructura interna no exportada que controla
@@ -188,6 +203,38 @@ func (c *client) fetchData() {
 		Token:    c.authToken,
 	})
 
+	if !res.Success {
+		fmt.Println("Error al obtener datos:", res.Message)
+		return
+	}
+
+		// Antes de desencriptar
+	fmt.Println("Datos encriptados recibidos:", res.Data)
+
+	// Desencriptar los datos recibidos
+	decryptedData := decryptData(res.Data)
+	fmt.Println("Datos encriptados recibidos:", res.Data)
+
+	// Verificar el resultado de la desencriptación
+	fmt.Println("Datos desencriptados:", decryptedData)
+
+	// Intentar decodificar JSON
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(decryptedData), &data); err != nil {
+		fmt.Println("Error al procesar los datos:", err)
+		return
+	}
+
+	// Mostrar los datos en formato de tabla
+	fmt.Println("\n-------------------------------------------------")
+	fmt.Printf("| %-15s | %-15s | %-15s | %-10s | %-4s | %-16s | %-16s |\n",
+    "Nombre", "Apellidos", "Fecha Nac.", "SIP", "Sexo", "Observaciones", "Solicitud")
+	fmt.Println("-------------------------------------------------")
+	fmt.Printf("| %-15s | %-15s | %-15s | %-10d | %-4s | %-16s | %-16s |",
+		data["nombre"], data["apellidos"], data["fechaNacimiento"], int(data["sip"].(float64)), data["sexo"], data["observaciones"], data["solicitud"])
+		fmt.Println()
+	fmt.Println("-------------------------------------------------")
+
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
 
@@ -201,25 +248,105 @@ func (c *client) fetchData() {
 func (c *client) updateData() {
 	ui.ClearScreen()
 	fmt.Println("** Actualizar datos del usuario **")
+	
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
 		return
 	}
 
-	// Leemos la nueva Data
-	newData := ui.ReadInput("Introduce el contenido que desees almacenar")
+	// Leemos la nueva información del paciente
+	nombre := ui.ReadInput("Nombre paciente")
+	apellidos := ui.ReadInput("Apellidos paciente")
+	fechaNacimiento := ui.ReadInput("Fecha de nacimiento (YYYY-MM-DD)")
+	sip := ui.ReadInt("SIP")
+	sexo := ui.ReadInput("Sexo (M/F)")
+	observaciones := ui.ReadMultiline("Observaciones")
+	solicitud:= ui.ReadMultiline("Solicitud")
 
-	// Enviamos la solicitud de actualización
+	// Construimos la estructura de datos para enviar al servidor
+	pacienteData := map[string]interface{}{
+		"nombre": nombre,
+		"apellidos": apellidos,
+		"fechaNacimiento": fechaNacimiento,
+		"sip": sip,
+		"sexo": sexo,
+		"observaciones": observaciones,
+		"solicitud": solicitud,
+	}
+
+    dataJSON, _ := json.Marshal(pacienteData)
+	encryptedData := encryptData(string(dataJSON))
+	fmt.Println("Datos encriptados enviados:", encryptedData)
+
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionUpdateData,
 		Username: c.currentUser,
 		Token:    c.authToken,
-		Data:     newData,
+		Data:     encryptedData,
 	})
 
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
+
+	
+}
+
+// encryptData cifra los datos con AES-CTR y los comprime.
+func encryptData(text string) string {
+	key := obtenerSHA256("ClaveSegura")
+	iv := obtenerSHA256("VectorInicial")[:16]
+
+	// Comprimir datos
+	var buffer bytes.Buffer
+	compressor := zlib.NewWriter(&buffer)
+	compressor.Write([]byte(text))
+	compressor.Close()
+
+	// Cifrar datos
+	cipherBlock, _ := aes.NewCipher(key)
+	stream := cipher.NewCTR(cipherBlock, iv)
+
+	encrypted := make([]byte, buffer.Len())
+	stream.XORKeyStream(encrypted, buffer.Bytes())
+
+	// Codificar en base64 para evitar pérdida de datos
+	return base64.StdEncoding.EncodeToString(encrypted)
+}
+
+// decryptData descifra los datos con AES-CTR y los descomprime.
+func decryptData(encryptedText string) string {
+	key := obtenerSHA256("ClaveSegura")
+	iv := obtenerSHA256("VectorInicial")[:16]
+
+	// Decodificar desde base64
+	decoded, err := base64.StdEncoding.DecodeString(encryptedText)
+	if err != nil {
+		fmt.Println("Error decodificando base64:", err)
+		return ""
+	}
+
+	// Descifrar datos
+	cipherBlock, _ := aes.NewCipher(key)
+	stream := cipher.NewCTR(cipherBlock, iv)
+
+	decrypted := make([]byte, len(decoded))
+	stream.XORKeyStream(decrypted, decoded)
+
+	// Descomprimir datos
+	buffer := bytes.NewReader(decrypted)
+	reader, _ := zlib.NewReader(buffer)
+	decompressed, _ := io.ReadAll(reader)
+	reader.Close()
+
+	return string(decompressed)
+}
+
+// obtenerSHA256 genera un hash SHA-256 de la clave
+func obtenerSHA256(text string) []byte {
+	h := sha256.New()
+	h.Write([]byte(text))
+	return h.Sum(nil)
 }
 
 // logoutUser llama a la acción logout en el servidor, y si es exitosa,

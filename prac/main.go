@@ -27,6 +27,7 @@ func main() {
 
 	// Creamos un logger con prefijo 'main' para identificar
 	// los mensajes en la consola.
+	// AES-CTR con clave de 128,256... bits y con un nonce
 	log := log.New(os.Stdout, "[main] ", log.LstdFlags)
 
 	// Inicia servidor en goroutine.

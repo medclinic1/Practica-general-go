@@ -8,6 +8,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,7 +29,7 @@ func check(e error) {
 	}
 }
 
-func cifrarString(textoEnClaro string, key []byte, iv []byte) (string, error) {
+func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
 	lectorTextoEnClaro := strings.NewReader(textoEnClaro)
 
 	var buffer bytes.Buffer
@@ -37,7 +38,7 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) (string, error) {
 	var err error
 	escritorConCifrado.S, err = obtenerAESconCTR(key, iv)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	escritorConCifrado.W = &buffer
 
@@ -45,12 +46,13 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) (string, error) {
 
 	_, err = io.Copy(escritorConCompresionyCifrado, lectorTextoEnClaro)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	escritorConCompresionyCifrado.Close()
 
-	return buffer.String(), nil
+	//return buffer.String(), nil
+	return []byte(base64.StdEncoding.EncodeToString(buffer.Bytes())), nil
 }
 
 func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
@@ -77,9 +79,9 @@ func descifrarString(encryptedData string, key []byte, iv []byte) (string, error
 	}
 
 	lectorConDescifradoDescompresion.Close()
-
 	textoEnClaroDescifrado := bufferDeBytesParaDescifraryDescomprimir.String()
-	return textoEnClaroDescifrado, nil
+	decoded, err := base64.StdEncoding.DecodeString(textoEnClaroDescifrado)
+	return string(decoded), nil
 }
 
 func obtenerAESconCTR(key []byte, iv []byte) (cipher.Stream, error) {
@@ -306,6 +308,7 @@ func (s *server) updateData(req api.Request) api.Response {
 	if err != nil {
 		return api.Response{Success: false, Message: "Error al cifrar datos del usuario"}
 	}
+	fmt.Println("Encriptados: ", encryptedData, "Desencriptados: ", req.Data)
 
 	// Escribimos el nuevo dato en 'userdata'
 	if err := s.db.Put("userdata", []byte(req.Username), []byte(encryptedData)); err != nil {
