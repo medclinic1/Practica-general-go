@@ -7,6 +7,7 @@ import (
 	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -21,6 +22,8 @@ import (
 
 	"prac/pkg/api"
 	"prac/pkg/store"
+
+	"golang.org/x/crypto/scrypt"
 )
 
 func check(e error) {
@@ -86,6 +89,25 @@ func descifrarString(encryptedData string, key []byte, iv []byte) (string, error
 }
 
 */
+
+// función para comprobar errores (ahorra escritura)
+func chk(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+// función para codificar de []bytes a string (Base64)
+func encode64(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data) // sólo utiliza caracteres "imprimibles"
+}
+
+// función para decodificar de string a []bytes (Base64)
+func decode64(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s) // recupera el formato original
+	chk(err)                                     // comprobamos el error
+	return b                                     // devolvemos los datos originales
+}
 
 func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
 	// Decode the base64 encoded string
@@ -181,7 +203,8 @@ func Run() error {
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
 	// Iniciamos el servidor HTTP.
-	err = http.ListenAndServe(":8080", mux)
+	//err = http.ListenAndServe(":8080", mux)
+	err = http.ListenAndServeTLS(":8080", "cert.pem", "key.pem", mux)
 
 	return err
 }
@@ -189,6 +212,8 @@ func Run() error {
 // apiHandler descodifica la solicitud JSON, la despacha
 // a la función correspondiente y devuelve la respuesta JSON.
 func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
+	// es necesario parsear el formulario
+	r.ParseForm()
 	if r.Method != http.MethodPost {
 		http.Error(w, "Método no permitido", http.StatusMethodNotAllowed)
 		return
@@ -232,9 +257,18 @@ func (s *server) generateToken() string {
 // registerUser registra un nuevo usuario, si no existe.
 // - Guardamos la contraseña en el namespace 'auth'
 // - Creamos entrada vacía en 'userdata' para el usuario
+var hsh []byte
+
 func (s *server) registerUser(req api.Request) api.Response {
+
+	//Salt
+	salt := make([]byte, 16)
+	rand.Read(salt)
+	pass := decode64(req.Password)
+	hsh, _ = scrypt.Key(pass, salt, 16384, 8, 1, 32)
+
 	// Validación básica
-	if req.Username == "" || req.Password == "" {
+	if req.Username == "" || len(pass) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
@@ -262,21 +296,34 @@ func (s *server) registerUser(req api.Request) api.Response {
 
 // loginUser valida credenciales en el namespace 'auth' y genera un token en 'sessions'.
 func (s *server) loginUser(req api.Request) api.Response {
-	if req.Username == "" || req.Password == "" {
+	//Cambio
+	pass := decode64(req.Password)
+	if req.Username == "" || len(pass) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
 	// Recogemos la contraseña guardada en 'auth'
+	//Añado decode64
 	storedPass, err := s.db.Get("auth", []byte(req.Username))
+	storedPass = decode64(string(storedPass))
 	if err != nil {
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
 
-	// Comparamos
-	if string(storedPass) != req.Password {
+	/*
+		// Comparamos
+		if string(storedPass) != string(pass) {
+			return api.Response{Success: false, Message: "Credenciales inválidas"}
+		}
+
+
+	*/
+	//Comparamos
+	salt := make([]byte, 16)
+	hash, _ := scrypt.Key(pass, salt, 16384, 8, 1, 32) // scrypt(contraseña)
+	if bytes.Compare(hsh, hash) != 0 {                 // comparamos
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
-
 	// Generamos un nuevo token, lo guardamos en 'sessions'
 	token := s.generateToken()
 	if err := s.db.Put("sessions", []byte(req.Username), []byte(token)); err != nil {
