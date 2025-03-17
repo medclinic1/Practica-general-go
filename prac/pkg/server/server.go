@@ -204,7 +204,9 @@ func Run() error {
 
 	// Iniciamos el servidor HTTP.
 	//err = http.ListenAndServe(":8080", mux)
-	err = http.ListenAndServeTLS(":8080", "cert.pem", "key.pem", mux)
+	// Para generar certificados autofirmados con openssl usar:
+	// openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/C=ES/ST=Alicante/L=Alicante/O=UA/OU=Org/CN=www.ua.com"
+	err = http.ListenAndServeTLS(":8080", "iv.pem", "key.pem", mux)
 
 	return err
 }
