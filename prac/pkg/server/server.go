@@ -51,10 +51,11 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
 
 	escritorConCompresionyCifrado.Close()
 
-	//return buffer.String(), nil
+	// Return the base64 encoded bytes directly
 	return []byte(base64.StdEncoding.EncodeToString(buffer.Bytes())), nil
 }
 
+/*
 func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
 	lectorTextoCifrado := strings.NewReader(encryptedData)
 
@@ -82,6 +83,40 @@ func descifrarString(encryptedData string, key []byte, iv []byte) (string, error
 	textoEnClaroDescifrado := bufferDeBytesParaDescifraryDescomprimir.String()
 	decoded, err := base64.StdEncoding.DecodeString(textoEnClaroDescifrado)
 	return string(decoded), nil
+}
+
+*/
+
+func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
+	// Decode the base64 encoded string
+	decodedData, err := base64.StdEncoding.DecodeString(encryptedData)
+	if err != nil {
+		return "", err
+	}
+
+	lectorTextoCifrado := bytes.NewReader(decodedData)
+
+	var bufferDeBytesParaDescifraryDescomprimir bytes.Buffer
+
+	var lectorConDescifrado cipher.StreamReader
+	lectorConDescifrado.S, err = obtenerAESconCTR(key, iv)
+	if err != nil {
+		return "", err
+	}
+	lectorConDescifrado.R = lectorTextoCifrado
+
+	lectorConDescifradoDescompresion, err := zlib.NewReader(lectorConDescifrado)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = io.Copy(&bufferDeBytesParaDescifraryDescomprimir, lectorConDescifradoDescompresion)
+	if err != nil {
+		return "", err
+	}
+
+	lectorConDescifradoDescompresion.Close()
+	return bufferDeBytesParaDescifraryDescomprimir.String(), nil
 }
 
 func obtenerAESconCTR(key []byte, iv []byte) (cipher.Stream, error) {
@@ -118,13 +153,13 @@ func Run() error {
 	key := obtenerSHA256("Clave")
 	err := os.WriteFile("key.txt", []byte(key), 0755)
 	if err != nil {
-		fmt.Printf("unable to write file: %w", err)
+		fmt.Printf("unable to write file: %v", err)
 	}
 
 	iv := obtenerSHA256("<inicializar>")
 	err2 := os.WriteFile("iv.txt", []byte(iv), 0755)
 	if err2 != nil {
-		fmt.Printf("unable to write file: %w", err2)
+		fmt.Printf("unable to write file: %v", err2)
 	}
 	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
