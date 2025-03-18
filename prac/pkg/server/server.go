@@ -32,7 +32,26 @@ func check(e error) {
 	}
 }
 
-func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
+// función para comprobar errores (ahorra escritura)
+func chk(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+// función para codificar de []bytes a string (Base64)
+func encode64(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data) // sólo utiliza caracteres "imprimibles"
+}
+
+// función para decodificar de string a []bytes (Base64)
+func decode64(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s) // recupera el formato original
+	chk(err)                                     // comprobamos el error
+	return b                                     // devolvemos los datos originales
+}
+
+func cifrarString(textoEnClaro string, key []byte, iv []byte) (string, error) {
 	lectorTextoEnClaro := strings.NewReader(textoEnClaro)
 
 	var buffer bytes.Buffer
@@ -41,7 +60,7 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
 	var err error
 	escritorConCifrado.S, err = obtenerAESconCTR(key, iv)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	escritorConCifrado.W = &buffer
 
@@ -49,13 +68,15 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
 
 	_, err = io.Copy(escritorConCompresionyCifrado, lectorTextoEnClaro)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	escritorConCompresionyCifrado.Close()
 
 	// Return the base64 encoded bytes directly
-	return []byte(base64.StdEncoding.EncodeToString(buffer.Bytes())), nil
+	//return []byte(base64.StdEncoding.EncodeToString(buffer.Bytes())), nil
+	return encode64(buffer.Bytes()), nil
+
 }
 
 /*
@@ -89,25 +110,6 @@ func descifrarString(encryptedData string, key []byte, iv []byte) (string, error
 }
 
 */
-
-// función para comprobar errores (ahorra escritura)
-func chk(e error) {
-	if e != nil {
-		panic(e)
-	}
-}
-
-// función para codificar de []bytes a string (Base64)
-func encode64(data []byte) string {
-	return base64.StdEncoding.EncodeToString(data) // sólo utiliza caracteres "imprimibles"
-}
-
-// función para decodificar de string a []bytes (Base64)
-func decode64(s string) []byte {
-	b, err := base64.StdEncoding.DecodeString(s) // recupera el formato original
-	chk(err)                                     // comprobamos el error
-	return b                                     // devolvemos los datos originales
-}
 
 func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
 	// Decode the base64 encoded string
@@ -203,10 +205,11 @@ func Run() error {
 	mux.Handle("/api", http.HandlerFunc(srv.apiHandler))
 
 	// Iniciamos el servidor HTTP.
-	//err = http.ListenAndServe(":8080", mux)
+	err = http.ListenAndServe(":8080", mux)
+
 	// Para generar certificados autofirmados con openssl usar:
 	// openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/C=ES/ST=Alicante/L=Alicante/O=UA/OU=Org/CN=www.ua.com"
-	err = http.ListenAndServeTLS(":8080", "iv.pem", "key.pem", mux)
+	//err = http.ListenAndServeTLS(":8080", "iv.pem", "key.pem", mux)
 
 	return err
 }
@@ -312,18 +315,15 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
 
-	/*
-		// Comparamos
-		if string(storedPass) != string(pass) {
-			return api.Response{Success: false, Message: "Credenciales inválidas"}
-		}
+	// Comparamos
+	if string(storedPass) != string(pass) {
+		return api.Response{Success: false, Message: "Credenciales inválidas"}
+	}
 
-
-	*/
 	//Comparamos
 	salt := make([]byte, 16)
 	hash, _ := scrypt.Key(pass, salt, 16384, 8, 1, 32) // scrypt(contraseña)
-	if bytes.Compare(hsh, hash) != 0 {                 // comparamos
+	if !bytes.Equal(hsh, hash) {                       // comparamos
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 	// Generamos un nuevo token, lo guardamos en 'sessions'

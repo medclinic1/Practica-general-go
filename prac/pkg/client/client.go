@@ -7,7 +7,6 @@
 // Introducir en el cliente para que se pueda conectar con SSL
 // Meter en el cliente el https
 
-
 package client
 
 import (
@@ -16,8 +15,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -26,8 +25,6 @@ import (
 
 	"prac/pkg/api"
 	"prac/pkg/ui"
-	
-	
 )
 
 // client estructura interna no exportada que controla
@@ -208,7 +205,7 @@ func (c *client) fetchData() {
 		return
 	}
 
-		// Antes de desencriptar
+	// Antes de desencriptar
 	fmt.Println("Datos encriptados recibidos:", res.Data)
 
 	// Desencriptar los datos recibidos
@@ -228,11 +225,11 @@ func (c *client) fetchData() {
 	// Mostrar los datos en formato de tabla
 	fmt.Println("\n-------------------------------------------------")
 	fmt.Printf("| %-15s | %-15s | %-15s | %-10s | %-4s | %-16s | %-16s |\n",
-    "Nombre", "Apellidos", "Fecha Nac.", "SIP", "Sexo", "Observaciones", "Solicitud")
+		"Nombre", "Apellidos", "Fecha Nac.", "SIP", "Sexo", "Observaciones", "Solicitud")
 	fmt.Println("-------------------------------------------------")
 	fmt.Printf("| %-15s | %-15s | %-15s | %-10d | %-4s | %-16s | %-16s |",
 		data["nombre"], data["apellidos"], data["fechaNacimiento"], int(data["sip"].(float64)), data["sexo"], data["observaciones"], data["solicitud"])
-		fmt.Println()
+	fmt.Println()
 	fmt.Println("-------------------------------------------------")
 
 	fmt.Println("Éxito:", res.Success)
@@ -248,7 +245,6 @@ func (c *client) fetchData() {
 func (c *client) updateData() {
 	ui.ClearScreen()
 	fmt.Println("** Actualizar datos del usuario **")
-	
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
@@ -262,20 +258,20 @@ func (c *client) updateData() {
 	sip := ui.ReadInt("SIP")
 	sexo := ui.ReadInput("Sexo (M/F)")
 	observaciones := ui.ReadMultiline("Observaciones")
-	solicitud:= ui.ReadMultiline("Solicitud")
+	solicitud := ui.ReadMultiline("Solicitud")
 
 	// Construimos la estructura de datos para enviar al servidor
 	pacienteData := map[string]interface{}{
-		"nombre": nombre,
-		"apellidos": apellidos,
+		"nombre":          nombre,
+		"apellidos":       apellidos,
 		"fechaNacimiento": fechaNacimiento,
-		"sip": sip,
-		"sexo": sexo,
-		"observaciones": observaciones,
-		"solicitud": solicitud,
+		"sip":             sip,
+		"sexo":            sexo,
+		"observaciones":   observaciones,
+		"solicitud":       solicitud,
 	}
 
-    dataJSON, _ := json.Marshal(pacienteData)
+	dataJSON, _ := json.Marshal(pacienteData)
 	encryptedData := encryptData(string(dataJSON))
 	fmt.Println("Datos encriptados enviados:", encryptedData)
 
@@ -289,7 +285,6 @@ func (c *client) updateData() {
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
 
-	
 }
 
 // encryptData cifra los datos con AES-CTR y los comprime.
