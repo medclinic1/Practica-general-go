@@ -6,6 +6,12 @@
 // Comprobar si el usuario se sabe la contraseña
 // Introducir en el cliente para que se pueda conectar con SSL
 // Meter en el cliente el https
+/*  En la fila 144 de la plantilla inicial se genera el token. para los token hay que generar una secuencia 
+aleatoria e impredecible y suficientemente largo para que no se pueda adivinar. La otra condición es que el token
+tiene una fecha de caducidad. Hay que guardar el token y la fecha de expiración. El cliente lo maneja enviando 
+el token cada vez que quiere hacer una acción. Si no valida el token , el servidor tiene que mandar un mensaje de error. Generarlo
+aleatorio, ponerle una fecha de caducidad y comparar el token con el guardado en el servidor con la fecha de caducidad.*/
+
 
 package client
 
@@ -14,7 +20,10 @@ import (
 	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/tls"
 	"crypto/sha256"
+	"crypto/rand"
+	"encoding/json"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -22,7 +31,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"syscall"
 
+	"golang.org/x/term"
 	"prac/pkg/api"
 	"prac/pkg/ui"
 )
@@ -117,30 +128,53 @@ func (c *client) runLoop() {
 	}
 }
 
+
+func readPassword(prompt string) string {
+	fmt.Print(prompt)
+	fd := int(syscall.Stdin)
+	bytePassword, err := term.ReadPassword(fd)
+	if err != nil {
+		fmt.Println("\nError al leer la contraseña.")
+		return ""
+	}
+	fmt.Println() // Salto de línea después de la contraseña oculta
+	return string(bytePassword)
+}
+
+
 // registerUser pide credenciales y las envía al servidor para un registro.
 // Si el registro es exitoso, se intenta el login automático.
 func (c *client) registerUser() {
 	ui.ClearScreen()
 	fmt.Println("** Registro de usuario **")
-
+	
 	username := ui.ReadInput("Nombre de usuario")
-	password := ui.ReadInput("Contraseña")
-
-	// Enviamos la acción al servidor
+	password := readPassword("Contraseña: ")
+	
+	nombre := ui.ReadInput("Nombre")
+	apellidos := ui.ReadInput("Apellidos")
+	especialidad := ui.ReadInput("Especialidad médica")
+	hospital := ui.ReadInput("Hospital")
+	
+	userData := map[string]string{
+		"nombre":       nombre,
+		"apellidos":    apellidos,
+		"especialidad": especialidad,
+		"hospital":     hospital,
+	}
+	userDataJSON, _ := json.Marshal(userData)
+	
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionRegister,
 		Username: username,
 		Password: password,
+		Data:     string(userDataJSON),
 	})
-
-	// Mostramos resultado
+	
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
-
-	// Si fue exitoso, probamos loguear automáticamente.
 	if res.Success {
 		c.log.Println("Registro exitoso; intentando login automático...")
-
 		loginRes := c.sendRequest(api.Request{
 			Action:   api.ActionLogin,
 			Username: username,
@@ -156,24 +190,24 @@ func (c *client) registerUser() {
 	}
 }
 
-// loginUser pide credenciales y realiza un login en el servidor.
+
+var contraseña string
 func (c *client) loginUser() {
 	ui.ClearScreen()
 	fmt.Println("** Inicio de sesión **")
-
+	
 	username := ui.ReadInput("Nombre de usuario")
-	password := ui.ReadInput("Contraseña")
-
+	password := readPassword("Contraseña: ")
+	contraseña=password
+	
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionLogin,
 		Username: username,
 		Password: password,
 	})
-
+	
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
-
-	// Si login fue exitoso, guardamos currentUser y el token.
 	if res.Success {
 		c.currentUser = username
 		c.authToken = res.Token
@@ -186,6 +220,7 @@ func (c *client) loginUser() {
 func (c *client) fetchData() {
 	ui.ClearScreen()
 	fmt.Println("** Obtener datos del usuario **")
+
 
 	// Chequeo básico de que haya sesión
 	if c.currentUser == "" || c.authToken == "" {
@@ -200,16 +235,34 @@ func (c *client) fetchData() {
 		Token:    c.authToken,
 	})
 
+		// Antes de descifrar
+	fmt.Println("[DEBUG] Datos encriptados recibidos:", res.Data)
+
+	// Verificar la contraseña usada para desencriptar
+	fmt.Println("[DEBUG] Contraseña usada para desencriptar:", contraseña)
+
+	// Intentar desencriptar
+	decryptedData := decryptData(res.Data, contraseña)
+
+	// Verificar el resultado de la desencriptación
+	fmt.Println("[DEBUG] Datos desencriptados:", decryptedData)
+
+	if decryptedData == "" {
+		fmt.Println("Error: No se pudo descifrar correctamente. Verifica que la contraseña coincida con la usada en el cifrado.")
+		return
+	}
+
 	if !res.Success {
 		fmt.Println("Error al obtener datos:", res.Message)
 		return
 	}
+	//6b51d431df5d7f141cbececcf79edf3dd861c3b4069f0b11661a3eefacbba918
 
 	// Antes de desencriptar
 	fmt.Println("Datos encriptados recibidos:", res.Data)
 
 	// Desencriptar los datos recibidos
-	decryptedData := decryptData(res.Data)
+	
 	fmt.Println("Datos encriptados recibidos:", res.Data)
 
 	// Verificar el resultado de la desencriptación
@@ -271,8 +324,8 @@ func (c *client) updateData() {
 		"solicitud":       solicitud,
 	}
 
-	dataJSON, _ := json.Marshal(pacienteData)
-	encryptedData := encryptData(string(dataJSON))
+    dataJSON, _ := json.Marshal(pacienteData)
+	encryptedData := encryptData(string(dataJSON),contraseña)
 	fmt.Println("Datos encriptados enviados:", encryptedData)
 
 	res := c.sendRequest(api.Request{
@@ -287,10 +340,18 @@ func (c *client) updateData() {
 
 }
 
-// encryptData cifra los datos con AES-CTR y los comprime.
-func encryptData(text string) string {
-	key := obtenerSHA256("ClaveSegura")
-	iv := obtenerSHA256("VectorInicial")[:16]
+func encryptData(text, password string) string {
+	// Generar clave desde la contraseña del usuario
+	key := obtenerSHA256(password)
+	fmt.Printf("[DEBUG] Clave AES generada: %x\n", key)
+
+	// Crear IV aleatorio
+	iv := make([]byte, 16)
+	_, err := rand.Read(iv)
+	if err != nil {
+		log.Fatalf("Error generando IV: %v", err)
+	}
+	fmt.Printf("[DEBUG] IV generado: %x\n", iv)
 
 	// Comprimir datos
 	var buffer bytes.Buffer
@@ -298,21 +359,32 @@ func encryptData(text string) string {
 	compressor.Write([]byte(text))
 	compressor.Close()
 
-	// Cifrar datos
-	cipherBlock, _ := aes.NewCipher(key)
-	stream := cipher.NewCTR(cipherBlock, iv)
+	// Cifrar datos usando modo CTR
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		log.Fatalf("Error creando el cifrador AES: %v", err)
+	}
+	stream := cipher.NewCTR(block, iv)
 
 	encrypted := make([]byte, buffer.Len())
 	stream.XORKeyStream(encrypted, buffer.Bytes())
 
+	// Concatenar IV + datos cifrados
+	finalData := append(iv, encrypted...)
+
 	// Codificar en base64 para evitar pérdida de datos
-	return base64.StdEncoding.EncodeToString(encrypted)
+	encoded := base64.StdEncoding.EncodeToString(finalData)
+	fmt.Printf("[DEBUG] Datos cifrados en base64: %s\n", encoded)
+
+	return encoded
 }
 
-// decryptData descifra los datos con AES-CTR y los descomprime.
-func decryptData(encryptedText string) string {
-	key := obtenerSHA256("ClaveSegura")
-	iv := obtenerSHA256("VectorInicial")[:16]
+
+
+func decryptData(encryptedText, password string) string {
+	// Generar clave desde la contraseña del usuario
+	key := obtenerSHA256(password)
+	fmt.Printf("[DEBUG] Clave AES generada (descifrado): %x\n", key)
 
 	// Decodificar desde base64
 	decoded, err := base64.StdEncoding.DecodeString(encryptedText)
@@ -320,22 +392,54 @@ func decryptData(encryptedText string) string {
 		fmt.Println("Error decodificando base64:", err)
 		return ""
 	}
+	fmt.Printf("[DEBUG] Datos decodificados: %x\n", decoded)
 
-	// Descifrar datos
-	cipherBlock, _ := aes.NewCipher(key)
-	stream := cipher.NewCTR(cipherBlock, iv)
+	// Verificar que los datos cifrados incluyen al menos 16 bytes para el IV
+	if len(decoded) < 16 {
+		fmt.Println("Error: Datos cifrados demasiado cortos.")
+		return ""
+	}
 
-	decrypted := make([]byte, len(decoded))
-	stream.XORKeyStream(decrypted, decoded)
+	// Extraer IV (primeros 16 bytes)
+	iv := decoded[:16]
+	encryptedData := decoded[16:]
+
+	fmt.Printf("[DEBUG] IV extraído: %x\n", iv)
+
+	// Descifrar datos usando modo CTR
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		log.Fatalf("Error creando el cifrador AES: %v", err)
+	}
+	stream := cipher.NewCTR(block, iv)
+
+	decrypted := make([]byte, len(encryptedData))
+	stream.XORKeyStream(decrypted, encryptedData)
+
+	fmt.Printf("[DEBUG] Datos descifrados (antes de descomprimir): %x\n", decrypted)
 
 	// Descomprimir datos
 	buffer := bytes.NewReader(decrypted)
-	reader, _ := zlib.NewReader(buffer)
-	decompressed, _ := io.ReadAll(reader)
+	reader, err := zlib.NewReader(buffer)
+	if err != nil {
+		fmt.Println("Error al descomprimir los datos:", err)
+		return ""
+	}
+	decompressed, err := io.ReadAll(reader)
 	reader.Close()
+
+	if err != nil {
+		fmt.Println("Error al leer los datos descomprimidos:", err)
+		return ""
+	}
+
+	fmt.Printf("[DEBUG] Datos finales descomprimidos: %s\n", string(decompressed))
 
 	return string(decompressed)
 }
+
+
+
 
 // obtenerSHA256 genera un hash SHA-256 de la clave
 func obtenerSHA256(text string) []byte {
@@ -375,8 +479,17 @@ func (c *client) logoutUser() {
 // sendRequest envía un POST JSON a la URL del servidor y
 // devuelve la respuesta decodificada. Se usa para todas las acciones.
 func (c *client) sendRequest(req api.Request) api.Response {
+	/* creamos un cliente especial que no comprueba la validez de los certificados
+	esto es necesario por que usamos certificados autofirmados (para pruebas) */
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+	
+
 	jsonData, _ := json.Marshal(req)
-	resp, err := http.Post("http://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData))
+	resp, err := client.Post("http://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		fmt.Println("Error al contactar con el servidor:", err)
 		return api.Response{Success: false, Message: "Error de conexión"}
