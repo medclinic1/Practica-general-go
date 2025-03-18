@@ -7,6 +7,7 @@ import (
 	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -21,6 +22,8 @@ import (
 
 	"prac/pkg/api"
 	"prac/pkg/store"
+
+	"golang.org/x/crypto/scrypt"
 )
 
 func check(e error) {
@@ -29,7 +32,26 @@ func check(e error) {
 	}
 }
 
-func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
+// función para comprobar errores (ahorra escritura)
+func chk(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+// función para codificar de []bytes a string (Base64)
+func encode64(data []byte) string {
+	return base64.StdEncoding.EncodeToString(data) // sólo utiliza caracteres "imprimibles"
+}
+
+// función para decodificar de string a []bytes (Base64)
+func decode64(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s) // recupera el formato original
+	chk(err)                                     // comprobamos el error
+	return b                                     // devolvemos los datos originales
+}
+
+func cifrarString(textoEnClaro string, key []byte, iv []byte) (string, error) {
 	lectorTextoEnClaro := strings.NewReader(textoEnClaro)
 
 	var buffer bytes.Buffer
@@ -38,7 +60,7 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
 	var err error
 	escritorConCifrado.S, err = obtenerAESconCTR(key, iv)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	escritorConCifrado.W = &buffer
 
@@ -46,15 +68,18 @@ func cifrarString(textoEnClaro string, key []byte, iv []byte) ([]byte, error) {
 
 	_, err = io.Copy(escritorConCompresionyCifrado, lectorTextoEnClaro)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	escritorConCompresionyCifrado.Close()
 
-	//return buffer.String(), nil
-	return []byte(base64.StdEncoding.EncodeToString(buffer.Bytes())), nil
+	// Return the base64 encoded bytes directly
+	//return []byte(base64.StdEncoding.EncodeToString(buffer.Bytes())), nil
+	return encode64(buffer.Bytes()), nil
+
 }
 
+/*
 func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
 	lectorTextoCifrado := strings.NewReader(encryptedData)
 
@@ -82,6 +107,40 @@ func descifrarString(encryptedData string, key []byte, iv []byte) (string, error
 	textoEnClaroDescifrado := bufferDeBytesParaDescifraryDescomprimir.String()
 	decoded, err := base64.StdEncoding.DecodeString(textoEnClaroDescifrado)
 	return string(decoded), nil
+}
+
+*/
+
+func descifrarString(encryptedData string, key []byte, iv []byte) (string, error) {
+	// Decode the base64 encoded string
+	decodedData, err := base64.StdEncoding.DecodeString(encryptedData)
+	if err != nil {
+		return "", err
+	}
+
+	lectorTextoCifrado := bytes.NewReader(decodedData)
+
+	var bufferDeBytesParaDescifraryDescomprimir bytes.Buffer
+
+	var lectorConDescifrado cipher.StreamReader
+	lectorConDescifrado.S, err = obtenerAESconCTR(key, iv)
+	if err != nil {
+		return "", err
+	}
+	lectorConDescifrado.R = lectorTextoCifrado
+
+	lectorConDescifradoDescompresion, err := zlib.NewReader(lectorConDescifrado)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = io.Copy(&bufferDeBytesParaDescifraryDescomprimir, lectorConDescifradoDescompresion)
+	if err != nil {
+		return "", err
+	}
+
+	lectorConDescifradoDescompresion.Close()
+	return bufferDeBytesParaDescifraryDescomprimir.String(), nil
 }
 
 func obtenerAESconCTR(key []byte, iv []byte) (cipher.Stream, error) {
@@ -118,13 +177,13 @@ func Run() error {
 	key := obtenerSHA256("Clave")
 	err := os.WriteFile("key.txt", []byte(key), 0755)
 	if err != nil {
-		fmt.Printf("unable to write file: %w", err)
+		fmt.Printf("unable to write file: %v", err)
 	}
 
 	iv := obtenerSHA256("<inicializar>")
 	err2 := os.WriteFile("iv.txt", []byte(iv), 0755)
 	if err2 != nil {
-		fmt.Printf("unable to write file: %w", err2)
+		fmt.Printf("unable to write file: %v", err2)
 	}
 	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
@@ -148,12 +207,18 @@ func Run() error {
 	// Iniciamos el servidor HTTP.
 	err = http.ListenAndServe(":8080", mux)
 
+	// Para generar certificados autofirmados con openssl usar:
+	// openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/C=ES/ST=Alicante/L=Alicante/O=UA/OU=Org/CN=www.ua.com"
+	//err = http.ListenAndServeTLS(":8080", "iv.pem", "key.pem", mux)
+
 	return err
 }
 
 // apiHandler descodifica la solicitud JSON, la despacha
 // a la función correspondiente y devuelve la respuesta JSON.
 func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
+	// es necesario parsear el formulario
+	r.ParseForm()
 	if r.Method != http.MethodPost {
 		http.Error(w, "Método no permitido", http.StatusMethodNotAllowed)
 		return
@@ -197,9 +262,18 @@ func (s *server) generateToken() string {
 // registerUser registra un nuevo usuario, si no existe.
 // - Guardamos la contraseña en el namespace 'auth'
 // - Creamos entrada vacía en 'userdata' para el usuario
+var hsh []byte
+
 func (s *server) registerUser(req api.Request) api.Response {
+
+	//Salt
+	salt := make([]byte, 16)
+	rand.Read(salt)
+	pass := decode64(req.Password)
+	hsh, _ = scrypt.Key(pass, salt, 16384, 8, 1, 32)
+
 	// Validación básica
-	if req.Username == "" || req.Password == "" {
+	if req.Username == "" || len(pass) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
@@ -227,21 +301,31 @@ func (s *server) registerUser(req api.Request) api.Response {
 
 // loginUser valida credenciales en el namespace 'auth' y genera un token en 'sessions'.
 func (s *server) loginUser(req api.Request) api.Response {
-	if req.Username == "" || req.Password == "" {
+	//Cambio
+	pass := decode64(req.Password)
+	if req.Username == "" || len(pass) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
 	// Recogemos la contraseña guardada en 'auth'
+	//Añado decode64
 	storedPass, err := s.db.Get("auth", []byte(req.Username))
+	storedPass = decode64(string(storedPass))
 	if err != nil {
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
 
 	// Comparamos
-	if string(storedPass) != req.Password {
+	if string(storedPass) != string(pass) {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
+	//Comparamos
+	salt := make([]byte, 16)
+	hash, _ := scrypt.Key(pass, salt, 16384, 8, 1, 32) // scrypt(contraseña)
+	if !bytes.Equal(hsh, hash) {                       // comparamos
+		return api.Response{Success: false, Message: "Credenciales inválidas"}
+	}
 	// Generamos un nuevo token, lo guardamos en 'sessions'
 	token := s.generateToken()
 	if err := s.db.Put("sessions", []byte(req.Username), []byte(token)); err != nil {
