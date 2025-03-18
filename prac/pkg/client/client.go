@@ -25,6 +25,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -32,7 +33,6 @@ import (
 	"os"
 	"syscall"
 
-	"golang.org/x/term"
 	"prac/pkg/api"
 	"prac/pkg/ui"
 
@@ -153,7 +153,7 @@ func readPassword(prompt string) string {
 func (c *client) registerUser() {
 	ui.ClearScreen()
 	fmt.Println("** Registro de usuario **")
-	
+
 	username := ui.ReadInput("Nombre de usuario")
 	password := readPassword("Contraseña: ")
 	hashedPassword := hashPassword(password) // Hashear antes de enviar
@@ -203,7 +203,7 @@ var contraseña string
 func (c *client) loginUser() {
 	ui.ClearScreen()
 	fmt.Println("** Inicio de sesión **")
-	
+
 	username := ui.ReadInput("Nombre de usuario")
 	password := readPassword("Contraseña: ")
 	contraseña = password
@@ -214,7 +214,7 @@ func (c *client) loginUser() {
 		Username: username,
 		Password: hashedPassword,
 	})
-	
+
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
 	if res.Success {
@@ -229,7 +229,6 @@ func (c *client) loginUser() {
 func (c *client) fetchData() {
 	ui.ClearScreen()
 	fmt.Println("** Obtener datos del usuario **")
-
 
 	// Chequeo básico de que haya sesión
 	if c.currentUser == "" || c.authToken == "" {
@@ -443,9 +442,6 @@ func decryptData(encryptedText, password string) string {
 
 	return string(decompressed)
 }
-
-
-
 
 // obtenerSHA256 genera un hash SHA-256 de la clave
 func obtenerSHA256(text string) []byte {
