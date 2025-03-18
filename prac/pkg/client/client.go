@@ -25,7 +25,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -33,6 +32,7 @@ import (
 	"os"
 	"syscall"
 
+	"golang.org/x/term"
 	"prac/pkg/api"
 	"prac/pkg/ui"
 
