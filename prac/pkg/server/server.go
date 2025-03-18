@@ -269,11 +269,11 @@ func (s *server) registerUser(req api.Request) api.Response {
 	//Salt
 	salt := make([]byte, 16)
 	rand.Read(salt)
-	pass := decode64(req.Password)
-	hsh, _ = scrypt.Key(pass, salt, 16384, 8, 1, 32)
+	//pass := decode64(req.Password)
+	hsh, _ = scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32)
 
 	// Validación básica
-	if req.Username == "" || len(pass) == 0 {
+	if req.Username == "" || len(req.Password) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
@@ -302,28 +302,29 @@ func (s *server) registerUser(req api.Request) api.Response {
 // loginUser valida credenciales en el namespace 'auth' y genera un token en 'sessions'.
 func (s *server) loginUser(req api.Request) api.Response {
 	//Cambio
-	pass := decode64(req.Password)
-	if req.Username == "" || len(pass) == 0 {
+	//pass := decode64(req.Password)
+	if req.Username == "" || len(req.Password) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
 	// Recogemos la contraseña guardada en 'auth'
 	//Añado decode64
-	storedPass, err := s.db.Get("auth", []byte(req.Username))
-	storedPass = decode64(string(storedPass))
-	if err != nil {
-		return api.Response{Success: false, Message: "Usuario no encontrado"}
-	}
-
-	// Comparamos
-	if string(storedPass) != string(pass) {
-		return api.Response{Success: false, Message: "Credenciales inválidas"}
-	}
-
+	//storedPass, err := s.db.Get("auth", []byte(req.Username))
+	//storedPass = decode64(string(storedPass))
+	/*
+		if err != nil {
+			return api.Response{Success: false, Message: "Usuario no encontrado"}
+		}
+			// Comparamos
+			if string(storedPass) != string(pass) {
+				return api.Response{Success: false, Message: "Credenciales inválidas"}
+			}
+	*/
 	//Comparamos
 	salt := make([]byte, 16)
-	hash, _ := scrypt.Key(pass, salt, 16384, 8, 1, 32) // scrypt(contraseña)
-	if !bytes.Equal(hsh, hash) {                       // comparamos
+	hash, _ := scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32) // scrypt(contraseña)
+
+	if !bytes.Equal(hsh, hash) { // comparamos
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 	// Generamos un nuevo token, lo guardamos en 'sessions'
