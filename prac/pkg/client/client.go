@@ -25,7 +25,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -489,7 +488,7 @@ func (c *client) sendRequest(req api.Request) api.Response {
 	
 
 	jsonData, _ := json.Marshal(req)
-	resp, err := client.Post("http://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData))
+	resp, err := client.Post("https://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		fmt.Println("Error al contactar con el servidor:", err)
 		return api.Response{Success: false, Message: "Error de conexión"}
