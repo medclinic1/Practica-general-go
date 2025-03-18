@@ -6,12 +6,20 @@
 // Comprobar si el usuario se sabe la contraseña
 // Introducir en el cliente para que se pueda conectar con SSL
 // Meter en el cliente el https
+<<<<<<< HEAD
+/*  En la fila 144 de la plantilla inicial se genera el token. para los token hay que generar una secuencia
+aleatoria e impredecible y suficientemente largo para que no se pueda adivinar. La otra condición es que el token
+tiene una fecha de caducidad. Hay que guardar el token y la fecha de expiración. El cliente lo maneja enviando
+el token cada vez que quiere hacer una acción. Si no valida el token , el servidor tiene que mandar un mensaje de error. Generarlo
+aleatorio, ponerle una fecha de caducidad y comparar el token con el guardado en el servidor con la fecha de caducidad.*/
+=======
 /*  En la fila 144 de la plantilla inicial se genera el token. para los token hay que generar una secuencia 
 aleatoria e impredecible y suficientemente largo para que no se pueda adivinar. La otra condición es que el token
 tiene una fecha de caducidad. Hay que guardar el token y la fecha de expiración. El cliente lo maneja enviando 
 el token cada vez que quiere hacer una acción. Si no valida el token , el servidor tiene que mandar un mensaje de error. Generarlo
 aleatorio, ponerle una fecha de caducidad y comparar el token con el guardado en el servidor con la fecha de caducidad.*/
 
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 
 package client
 
@@ -20,10 +28,16 @@ import (
 	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
+<<<<<<< HEAD
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
+=======
 	"crypto/tls"
 	"crypto/sha256"
 	"crypto/rand"
 	"encoding/json"
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -35,6 +49,8 @@ import (
 	"golang.org/x/term"
 	"prac/pkg/api"
 	"prac/pkg/ui"
+
+	"golang.org/x/term"
 )
 
 // client estructura interna no exportada que controla
@@ -127,7 +143,10 @@ func (c *client) runLoop() {
 	}
 }
 
+<<<<<<< HEAD
+=======
 
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 func readPassword(prompt string) string {
 	fmt.Print(prompt)
 	fd := int(syscall.Stdin)
@@ -140,7 +159,10 @@ func readPassword(prompt string) string {
 	return string(bytePassword)
 }
 
+<<<<<<< HEAD
+=======
 
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 // registerUser pide credenciales y las envía al servidor para un registro.
 // Si el registro es exitoso, se intenta el login automático.
 func (c *client) registerUser() {
@@ -149,12 +171,20 @@ func (c *client) registerUser() {
 	
 	username := ui.ReadInput("Nombre de usuario")
 	password := readPassword("Contraseña: ")
+<<<<<<< HEAD
+
+=======
 	
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	nombre := ui.ReadInput("Nombre")
 	apellidos := ui.ReadInput("Apellidos")
 	especialidad := ui.ReadInput("Especialidad médica")
 	hospital := ui.ReadInput("Hospital")
+<<<<<<< HEAD
+
+=======
 	
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	userData := map[string]string{
 		"nombre":       nombre,
 		"apellidos":    apellidos,
@@ -162,14 +192,22 @@ func (c *client) registerUser() {
 		"hospital":     hospital,
 	}
 	userDataJSON, _ := json.Marshal(userData)
+<<<<<<< HEAD
+
+=======
 	
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionRegister,
 		Username: username,
 		Password: password,
 		Data:     string(userDataJSON),
 	})
+<<<<<<< HEAD
+
+=======
 	
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	fmt.Println("Éxito:", res.Success)
 	fmt.Println("Mensaje:", res.Message)
 	if res.Success {
@@ -189,16 +227,26 @@ func (c *client) registerUser() {
 	}
 }
 
+<<<<<<< HEAD
+var contraseña string
+
+=======
 
 var contraseña string
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 func (c *client) loginUser() {
 	ui.ClearScreen()
 	fmt.Println("** Inicio de sesión **")
 	
 	username := ui.ReadInput("Nombre de usuario")
 	password := readPassword("Contraseña: ")
+<<<<<<< HEAD
+	contraseña = password
+
+=======
 	contraseña=password
 	
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	res := c.sendRequest(api.Request{
 		Action:   api.ActionLogin,
 		Username: username,
@@ -234,7 +282,11 @@ func (c *client) fetchData() {
 		Token:    c.authToken,
 	})
 
+<<<<<<< HEAD
+	// Antes de descifrar
+=======
 		// Antes de descifrar
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	fmt.Println("[DEBUG] Datos encriptados recibidos:", res.Data)
 
 	// Verificar la contraseña usada para desencriptar
@@ -261,7 +313,11 @@ func (c *client) fetchData() {
 	fmt.Println("Datos encriptados recibidos:", res.Data)
 
 	// Desencriptar los datos recibidos
+<<<<<<< HEAD
+
+=======
 	
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	fmt.Println("Datos encriptados recibidos:", res.Data)
 
 	// Verificar el resultado de la desencriptación
@@ -323,8 +379,13 @@ func (c *client) updateData() {
 		"solicitud":       solicitud,
 	}
 
+<<<<<<< HEAD
+	dataJSON, _ := json.Marshal(pacienteData)
+	encryptedData := encryptData(string(dataJSON), contraseña)
+=======
     dataJSON, _ := json.Marshal(pacienteData)
 	encryptedData := encryptData(string(dataJSON),contraseña)
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 	fmt.Println("Datos encriptados enviados:", encryptedData)
 
 	res := c.sendRequest(api.Request{
@@ -378,8 +439,11 @@ func encryptData(text, password string) string {
 	return encoded
 }
 
+<<<<<<< HEAD
+=======
 
 
+>>>>>>> 604fb7406c1ff11a6689e51170c6ffa5ea3c5cfa
 func decryptData(encryptedText, password string) string {
 	// Generar clave desde la contraseña del usuario
 	key := obtenerSHA256(password)
@@ -485,6 +549,11 @@ func (c *client) sendRequest(req api.Request) api.Response {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: tr}
+<<<<<<< HEAD
+
+	jsonData, _ := json.Marshal(req)
+	resp, err := client.Post("https://localhost:8080/api", "application/json", bytes.NewBuffer(jsonData))
+=======
 	
 
 	jsonData, _ := json.Marshal(req)
