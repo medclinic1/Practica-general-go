@@ -7,7 +7,6 @@ import (
 	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -22,8 +21,6 @@ import (
 
 	"prac/pkg/api"
 	"prac/pkg/store"
-
-	"golang.org/x/crypto/scrypt"
 )
 
 func check(e error) {
@@ -262,16 +259,16 @@ func (s *server) generateToken() string {
 // registerUser registra un nuevo usuario, si no existe.
 // - Guardamos la contraseña en el namespace 'auth'
 // - Creamos entrada vacía en 'userdata' para el usuario
-var hsh []byte
+//var hsh []byte
 
 func (s *server) registerUser(req api.Request) api.Response {
-
-	//Salt
-	salt := make([]byte, 16)
-	rand.Read(salt)
-	//pass := decode64(req.Password)
-	hsh, _ = scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32)
-
+	/*
+		//Salt
+		salt := make([]byte, 16)
+		rand.Read(salt)
+		//pass := decode64(req.Password)
+		hsh, _ = scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32)
+	*/
 	// Validación básica
 	if req.Username == "" || len(req.Password) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
@@ -309,24 +306,25 @@ func (s *server) loginUser(req api.Request) api.Response {
 
 	// Recogemos la contraseña guardada en 'auth'
 	//Añado decode64
-	//storedPass, err := s.db.Get("auth", []byte(req.Username))
+	storedPass, err := s.db.Get("auth", []byte(req.Username))
 	//storedPass = decode64(string(storedPass))
-	/*
-		if err != nil {
-			return api.Response{Success: false, Message: "Usuario no encontrado"}
-		}
-			// Comparamos
-			if string(storedPass) != string(pass) {
-				return api.Response{Success: false, Message: "Credenciales inválidas"}
-			}
-	*/
-	//Comparamos
-	salt := make([]byte, 16)
-	hash, _ := scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32) // scrypt(contraseña)
 
-	if !bytes.Equal(hsh, hash) { // comparamos
+	if err != nil {
+		return api.Response{Success: false, Message: "Usuario no encontrado"}
+	}
+	// Comparamos
+	if string(storedPass) != string(req.Password) {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
+	/*
+		//Comparamos
+		salt := make([]byte, 16)
+		hash, _ := scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32) // scrypt(contraseña)
+
+		if !bytes.Equal(hsh, hash) { // comparamos
+			return api.Response{Success: false, Message: "Credenciales inválidas"}
+		}
+	*/
 	// Generamos un nuevo token, lo guardamos en 'sessions'
 	token := s.generateToken()
 	if err := s.db.Put("sessions", []byte(req.Username), []byte(token)); err != nil {
