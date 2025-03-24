@@ -7,6 +7,7 @@ import (
 	"compress/zlib"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -18,9 +19,14 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"prac/pkg/api"
 	"prac/pkg/store"
+
+	"strconv"
+
+	"golang.org/x/crypto/scrypt"
 )
 
 func check(e error) {
@@ -251,9 +257,11 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // generateToken crea un token único incrementando un contador interno (inseguro)
-func (s *server) generateToken() string {
-	id := atomic.AddInt64(&s.tokenCounter, 1) // atomic es necesario al haber paralelismo en las peticiones HTTP.
-	return fmt.Sprintf("token_%d", id)
+func (s *server) generateToken() (string, int64) {
+	id := atomic.AddInt64(&s.tokenCounter, 1) // atomic is necessary for concurrency
+	token := fmt.Sprintf("token_%d", id)
+	timestamp := time.Now().Unix() // Current Unix timestamp
+	return token, timestamp
 }
 
 // registerUser registra un nuevo usuario, si no existe.
@@ -262,13 +270,6 @@ func (s *server) generateToken() string {
 //var hsh []byte
 
 func (s *server) registerUser(req api.Request) api.Response {
-	/*
-		//Salt
-		salt := make([]byte, 16)
-		rand.Read(salt)
-		//pass := decode64(req.Password)
-		hsh, _ = scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32)
-	*/
 	// Validación básica
 	if req.Username == "" || len(req.Password) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
@@ -283,8 +284,22 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "El usuario ya existe"}
 	}
 
-	// Almacenamos la contraseña en el namespace 'auth' (clave=nombre, valor=contraseña)
-	if err := s.db.Put("auth", []byte(req.Username), []byte(req.Password)); err != nil {
+	// Salt y Hash
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return api.Response{Success: false, Message: "Error al generar salt"}
+	}
+
+	hashedPassword, err := scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al hashear contraseña"}
+	}
+
+	// Se separan con ':'
+	saltAndHash := fmt.Sprintf("%s:%s", encode64(salt), encode64(hashedPassword))
+
+	// Almacenamos el salt y el hash en el namespace 'auth' (clave=nombre, valor=salt:hash)
+	if err := s.db.Put("auth", []byte(req.Username), []byte(saltAndHash)); err != nil {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
 
@@ -298,36 +313,39 @@ func (s *server) registerUser(req api.Request) api.Response {
 
 // loginUser valida credenciales en el namespace 'auth' y genera un token en 'sessions'.
 func (s *server) loginUser(req api.Request) api.Response {
-	//Cambio
-	//pass := decode64(req.Password)
+	// Basic validation
 	if req.Username == "" || len(req.Password) == 0 {
 		return api.Response{Success: false, Message: "Faltan credenciales"}
 	}
 
-	// Recogemos la contraseña guardada en 'auth'
-	//Añado decode64
+	// Retrieve stored credentials
 	storedPass, err := s.db.Get("auth", []byte(req.Username))
-	//storedPass = decode64(string(storedPass))
-
 	if err != nil {
 		return api.Response{Success: false, Message: "Usuario no encontrado"}
 	}
-	// Comparamos
-	if string(storedPass) != string(req.Password) {
+
+	parts := strings.Split(string(storedPass), ":")
+	if len(parts) != 2 {
+		return api.Response{Success: false, Message: "Formato de credenciales inválido"}
+	}
+	salt := decode64(parts[0])
+	storedHash := decode64(parts[1])
+	hashedPassword, err := scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al hashear contraseña"}
+	}
+
+	// Comparar
+	if !bytes.Equal(hashedPassword, storedHash) {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
-	/*
-		//Comparamos
-		salt := make([]byte, 16)
-		hash, _ := scrypt.Key([]byte(req.Password), salt, 16384, 8, 1, 32) // scrypt(contraseña)
 
-		if !bytes.Equal(hsh, hash) { // comparamos
-			return api.Response{Success: false, Message: "Credenciales inválidas"}
-		}
-	*/
-	// Generamos un nuevo token, lo guardamos en 'sessions'
-	token := s.generateToken()
-	if err := s.db.Put("sessions", []byte(req.Username), []byte(token)); err != nil {
+	// Token
+	token, timestamp := s.generateToken()
+	sessionData := fmt.Sprintf("%s:%d", token, timestamp)
+
+	// Store the token and timestamp in 'sessions'
+	if err := s.db.Put("sessions", []byte(req.Username), []byte(sessionData)); err != nil {
 		return api.Response{Success: false, Message: "Error al crear sesión"}
 	}
 
@@ -439,9 +457,33 @@ func (s *server) userExists(username string) (bool, error) {
 // isTokenValid comprueba que el token almacenado en 'sessions'
 // coincida con el token proporcionado.
 func (s *server) isTokenValid(username, token string) bool {
-	storedToken, err := s.db.Get("sessions", []byte(username))
+	storedSession, err := s.db.Get("sessions", []byte(username))
 	if err != nil {
 		return false
 	}
-	return string(storedToken) == token
+
+	// Split the stored session data into token and timestamp
+	parts := strings.Split(string(storedSession), ":")
+	if len(parts) != 2 {
+		return false
+	}
+	storedToken := parts[0]
+	storedTimestamp, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return false
+	}
+
+	// Check if the token matches
+	if storedToken != token {
+		return false
+	}
+
+	// Check if the token is expired (e.g., 1 hour expiration)
+	expirationTime := int64(3600) // 1 hour in seconds
+	currentTime := time.Now().Unix()
+	if currentTime-storedTimestamp > expirationTime {
+		return false
+	}
+
+	return true
 }
