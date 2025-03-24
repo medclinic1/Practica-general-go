@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 	"prac/pkg/api"
@@ -45,6 +46,33 @@ type client struct {
 	log         *log.Logger
 	currentUser string
 	authToken   string
+}
+
+// Token representa un token con una fecha de expiración.
+type Token struct {
+	Value     string
+	ExpiresAt time.Time
+}
+
+
+// generateToken crea un token aleatorio y define su caducidad.
+func generateToken() Token {
+	// Crear un token aleatorio de 32 bytes
+	tokenBytes := make([]byte, 32)
+	_, err := rand.Read(tokenBytes)
+	if err != nil {
+		panic("Error generando token")
+	}
+
+	tokenValue := base64.StdEncoding.EncodeToString(tokenBytes)
+
+	// Definir una duración del token (por ejemplo, 15 minutos)
+	expiration := time.Now().Add(15 * time.Minute)
+
+	return Token{
+		Value:     tokenValue,
+		ExpiresAt: expiration,
+	}
 }
 
 // Run es la única función exportada de este paquete.
@@ -190,7 +218,8 @@ func (c *client) registerUser() {
 
 		if loginRes.Success {
 			c.currentUser = username
-			c.authToken = loginRes.Token
+			token:=generateToken()
+			c.authToken = token.Value
 			fmt.Println("Login automático exitoso. Token guardado.")
 		} else {
 			fmt.Println("No se ha podido hacer login automático:", loginRes.Message)
@@ -243,20 +272,13 @@ func (c *client) fetchData() {
 		Token:    c.authToken,
 	})
 
-	// Antes de descifrar
-	fmt.Println("[DEBUG] Datos encriptados recibidos:", res.Data)
-
-	// Verificar la contraseña usada para desencriptar
-	fmt.Println("[DEBUG] Contraseña usada para desencriptar:", contraseña)
-
+	
 	// Intentar desencriptar
 	decryptedData := decryptData(res.Data, contraseña)
 
-	// Verificar el resultado de la desencriptación
-	fmt.Println("[DEBUG] Datos desencriptados:", decryptedData)
-
+	
 	if decryptedData == "" {
-		fmt.Println("Error: No se pudo descifrar correctamente. Verifica que la contraseña coincida con la usada en el cifrado.")
+		fmt.Println("No se han introducido datos.")
 		return
 	}
 
@@ -264,7 +286,7 @@ func (c *client) fetchData() {
 		fmt.Println("Error al obtener datos:", res.Message)
 		return
 	}
-	//6b51d431df5d7f141cbececcf79edf3dd861c3b4069f0b11661a3eefacbba918
+	
 
 	// Antes de desencriptar
 	fmt.Println("Datos encriptados recibidos:", res.Data)
@@ -350,7 +372,7 @@ func (c *client) updateData() {
 func encryptData(text, password string) string {
 	// Generar clave desde la contraseña del usuario
 	key := obtenerSHA256(password)
-	fmt.Printf("[DEBUG] Clave AES generada: %x\n", key)
+	
 
 	// Crear IV aleatorio
 	iv := make([]byte, 16)
@@ -358,7 +380,7 @@ func encryptData(text, password string) string {
 	if err != nil {
 		log.Fatalf("Error generando IV: %v", err)
 	}
-	fmt.Printf("[DEBUG] IV generado: %x\n", iv)
+	
 
 	// Comprimir datos
 	var buffer bytes.Buffer
@@ -389,7 +411,7 @@ func encryptData(text, password string) string {
 func decryptData(encryptedText, password string) string {
 	// Generar clave desde la contraseña del usuario
 	key := obtenerSHA256(password)
-	fmt.Printf("[DEBUG] Clave AES generada (descifrado): %x\n", key)
+	
 
 	// Decodificar desde base64
 	decoded, err := base64.StdEncoding.DecodeString(encryptedText)
@@ -409,8 +431,6 @@ func decryptData(encryptedText, password string) string {
 	iv := decoded[:16]
 	encryptedData := decoded[16:]
 
-	fmt.Printf("[DEBUG] IV extraído: %x\n", iv)
-
 	// Descifrar datos usando modo CTR
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -421,7 +441,6 @@ func decryptData(encryptedText, password string) string {
 	decrypted := make([]byte, len(encryptedData))
 	stream.XORKeyStream(decrypted, encryptedData)
 
-	fmt.Printf("[DEBUG] Datos descifrados (antes de descomprimir): %x\n", decrypted)
 
 	// Descomprimir datos
 	buffer := bytes.NewReader(decrypted)
@@ -437,8 +456,6 @@ func decryptData(encryptedText, password string) string {
 		fmt.Println("Error al leer los datos descomprimidos:", err)
 		return ""
 	}
-
-	fmt.Printf("[DEBUG] Datos finales descomprimidos: %s\n", string(decompressed))
 
 	return string(decompressed)
 }
@@ -483,6 +500,15 @@ func (c *client) logoutUser() {
 func (c *client) sendRequest(req api.Request) api.Response {
 	/* creamos un cliente especial que no comprueba la validez de los certificados
 	esto es necesario por que usamos certificados autofirmados (para pruebas) */
+
+	//Verificar si el token sigue siendo válido
+	if c.authToken == "" {
+		fmt.Println("Error: No hay token disponible.")
+		return api.Response{Success: false, Message: "No autenticado"}
+	}
+
+	// Adjuntar el token en la solicitud
+	req.Token = c.authToken
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
