@@ -188,7 +188,7 @@ func Run() error {
 		fmt.Printf("unable to write file: %v", err)
 	}
 
-	//El iv debe ser diferente y aleatorio cada vez que se inicia el servidor
+	//El iv debe ser diferente, generado en función del nombre del usuario cada vez que se inicia el servidor
 	//Esto hay que cambiarlo
 	iv := obtenerSHA256("<inicializar>")
 	err2 := os.WriteFile("iv.txt", []byte(iv), 0755)
