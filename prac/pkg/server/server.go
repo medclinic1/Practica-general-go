@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"prac/pkg/api"
@@ -28,6 +27,12 @@ import (
 
 	"golang.org/x/crypto/scrypt"
 )
+
+// Token representa un token con una fecha de expiración.
+type Token struct {
+	Value     string
+	ExpiresAt time.Time
+}
 
 func check(e error) {
 	if e != nil {
@@ -183,6 +188,8 @@ func Run() error {
 		fmt.Printf("unable to write file: %v", err)
 	}
 
+	//El iv debe ser diferente y aleatorio cada vez que se inicia el servidor
+	//Esto hay que cambiarlo
 	iv := obtenerSHA256("<inicializar>")
 	err2 := os.WriteFile("iv.txt", []byte(iv), 0755)
 	if err2 != nil {
@@ -258,9 +265,13 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 
 // generateToken crea un token único incrementando un contador interno (inseguro)
 func (s *server) generateToken() (string, int64) {
-	id := atomic.AddInt64(&s.tokenCounter, 1) // atomic is necessary for concurrency
-	token := fmt.Sprintf("token_%d", id)
+	tokenBytes := make([]byte, 32)
+	_, err := rand.Read(tokenBytes)
+	if err != nil {
+		panic("Error generando token")
+	}
 	timestamp := time.Now().Unix() // Current Unix timestamp
+	token := base64.StdEncoding.EncodeToString(tokenBytes)
 	return token, timestamp
 }
 
@@ -479,7 +490,8 @@ func (s *server) isTokenValid(username, token string) bool {
 	}
 
 	// Check if the token is expired (e.g., 1 hour expiration)
-	expirationTime := int64(3600) // 1 hour in seconds
+	expirationTime := int64(86400) // 1 day in seconds
+	//La otra función está en minutos
 	currentTime := time.Now().Unix()
 	if currentTime-storedTimestamp > expirationTime {
 		return false
