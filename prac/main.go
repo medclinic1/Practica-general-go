@@ -14,14 +14,29 @@ estudiantes: 	**entregar**
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"syscall"
 	"time"
 
+	"golang.org/x/term"
 	"prac/pkg/client"
 	"prac/pkg/server"
 	"prac/pkg/ui"
 )
+
+var masterKey string
+
+func readMasterKey() string {
+	fmt.Print("Ingrese la clave maestra: ")
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		log.Fatal("Error al leer la clave maestra")
+	}
+	fmt.Println()
+	return string(bytePassword)
+}
 
 func main() {
 
@@ -30,10 +45,16 @@ func main() {
 	// AES-CTR con clave de 128,256... bits y con un nonce
 	log := log.New(os.Stdout, "[main] ", log.LstdFlags)
 
-	// Inicia servidor en goroutine.
+	// Solicitar la clave maestra al inicio
+	masterKey = readMasterKey()
+
+
+
+	log.Println("Clave maestra establecida.")
+
 	log.Println("Iniciando servidor...")
 	go func() {
-		if err := server.Run(); err != nil {
+		if err := server.Run(masterKey); err != nil {
 			log.Fatalf("Error del servidor: %v\n", err)
 		}
 	}()

@@ -7,6 +7,7 @@ import "fmt"
 
 // Store define los métodos comunes que deben implementar
 // los diferentes motores de almacenamiento.
+
 type Store interface {
 	// Put almacena (o actualiza) el valor 'value' bajo la clave 'key'
 	// dentro del 'namespace' indicado.
@@ -31,6 +32,15 @@ type Store interface {
 
 	// Dump imprime todo el contenido de la base de datos para depuración de errores.
 	Dump() error
+
+	
+}
+
+// Transaction define la interfaz para operaciones en transacciones
+type Transaction interface {
+    Put(namespace string, key, value []byte) error
+    Get(namespace string, key []byte) ([]byte, error)
+    Delete(namespace string, key []byte) error
 }
 
 // NewStore permite instanciar diferentes tipos de Store

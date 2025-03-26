@@ -83,6 +83,7 @@ func Run() {
 	// los mensajes en la consola.
 	c := &client{
 		log: log.New(os.Stdout, "[cli] ", log.LstdFlags),
+		
 	}
 	c.runLoop()
 }
@@ -115,7 +116,7 @@ func (c *client) runLoop() {
 			// Usuario logueado: Ver datos, Actualizar datos, Logout, Salir
 			options = []string{
 				"Ver datos",
-				"Actualizar datos",
+				"Crear nuevo expediente",
 				"Cerrar sesión",
 				"Salir",
 			}
@@ -143,7 +144,7 @@ func (c *client) runLoop() {
 			case 1:
 				c.fetchData()
 			case 2:
-				c.updateData()
+				c.createExpediente()
 			case 3:
 				c.logoutUser()
 			case 4:
@@ -273,67 +274,90 @@ func (c *client) fetchData() {
 	})
 
 	
-	// Intentar desencriptar
-	decryptedData := decryptData(res.Data, contraseña)
-
-	
-	if decryptedData == "" {
-		fmt.Println("No se han introducido datos.")
-		return
-	}
-
 	if !res.Success {
-		fmt.Println("Error al obtener datos:", res.Message)
-		return
-	}
-	
+        fmt.Println("Error:", res.Message)
+        return
+    }
 
-	// Antes de desencriptar
-	fmt.Println("Datos encriptados recibidos:", res.Data)
+    // Debug: Ver datos crudos
+    //fmt.Printf("[DEBUG] Datos recibidos: %s\n", res.Data)
 
-	// Desencriptar los datos recibidos
-	fmt.Println("Datos encriptados recibidos:", res.Data)
+    // Primero: Deserializar el array de strings JSON
+    var expedientesJSON []string
+    if err := json.Unmarshal([]byte(res.Data), &expedientesJSON); err != nil {
+        fmt.Println("Error al deserializar lista de expedientes:", err)
+        return
+    }
 
-	// Verificar el resultado de la desencriptación
-	fmt.Println("Datos desencriptados:", decryptedData)
+    // Procesar cada expediente
+    for _, expJSON := range expedientesJSON {
+        // Segundo: Deserializar cada expediente individual
+        var expediente map[string]interface{}
+        if err := json.Unmarshal([]byte(expJSON), &expediente); err != nil {
+            fmt.Printf("Error al deserializar expediente %s: %v\n", expJSON, err)
+            continue
+        }
 
-	// Intentar decodificar JSON
-	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(decryptedData), &data); err != nil {
-		fmt.Println("Error al procesar los datos:", err)
-		return
-	}
+        fmt.Printf("\n=== Expediente ID: %v ===\n", expediente["id"])
+        fmt.Printf("Fecha: %v\n", expediente["fecha_creacion"])
 
-	// Mostrar los datos en formato de tabla
-	fmt.Println("\n-------------------------------------------------")
-	fmt.Printf("| %-15s | %-15s | %-15s | %-10s | %-4s | %-16s | %-16s |\n",
-		"Nombre", "Apellidos", "Fecha Nac.", "SIP", "Sexo", "Observaciones", "Solicitud")
-	fmt.Println("-------------------------------------------------")
-	fmt.Printf("| %-15s | %-15s | %-15s | %-10d | %-4s | %-16s | %-16s |",
-		data["nombre"], data["apellidos"], data["fechaNacimiento"], int(data["sip"].(float64)), data["sexo"], data["observaciones"], data["solicitud"])
-	fmt.Println()
-	fmt.Println("-------------------------------------------------")
+        // Obtener y desencriptar datos médicos
+        datosEnc, ok := expediente["datos"].(string)
+        if !ok {
+            fmt.Println("(Formato de datos inválido)")
+            continue
+        }
 
-	fmt.Println("Éxito:", res.Success)
-	fmt.Println("Mensaje:", res.Message)
+        datosMedicos := decryptData(datosEnc,contraseña)
+        if datosMedicos == "" {
+            fmt.Println("(No se pudieron desencriptar los datos)")
+            continue
+        }
 
-	// Si fue exitoso, mostramos la data recibida
-	if res.Success {
-		fmt.Println("Tus datos:", res.Data)
-	}
+        // Mostrar datos médicos
+        mostrarDatosMedicos(datosMedicos)
+    }
+}
+
+// Función auxiliar para mostrar datos (igual que antes)
+func mostrarDatosMedicos(datos string) {
+    var info struct {
+        Nombre         string  `json:"nombre"`
+        Apellidos     string  `json:"apellidos"`
+        FechaNacimiento string `json:"fechaNacimiento"`
+        SIP           float64 `json:"sip"`
+        Sexo          string  `json:"sexo"`
+        Observaciones string  `json:"observaciones"`
+        Solicitud     string  `json:"solicitud"`
+    }
+
+    if err := json.Unmarshal([]byte(datos), &info); err != nil {
+        fmt.Println("Error al procesar datos médicos:", err)
+        return
+    }
+
+    fmt.Println("-------------------------------------------------")
+    fmt.Printf("| %-15s | %-15s | %-15s |\n", "Nombre", "Apellidos", "Fecha Nac.")
+    fmt.Println("-------------------------------------------------")
+    fmt.Printf("| %-15s | %-15s | %-15s |\n", info.Nombre, info.Apellidos, info.FechaNacimiento)
+    fmt.Println("-------------------------------------------------")
+    fmt.Printf("SIP: %.0f | Sexo: %s\n", info.SIP, info.Sexo)
+    fmt.Println("Observaciones:", info.Observaciones)
+    fmt.Println("Solicitud:", info.Solicitud)
+    fmt.Println("-------------------------------------------------")
 }
 
 // updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
-func (c *client) updateData() {
+func (c *client) createExpediente() {
 	ui.ClearScreen()
-	fmt.Println("** Actualizar datos del usuario **")
+	fmt.Println("** Crear nuevo expediente **")
 
 	if c.currentUser == "" || c.authToken == "" {
 		fmt.Println("No estás logueado. Inicia sesión primero.")
 		return
 	}
 
-	// Leemos la nueva información del paciente
+	
 	nombre := ui.ReadInput("Nombre paciente")
 	apellidos := ui.ReadInput("Apellidos paciente")
 	fechaNacimiento := ui.ReadInput("Fecha de nacimiento (YYYY-MM-DD)")
@@ -342,8 +366,7 @@ func (c *client) updateData() {
 	observaciones := ui.ReadMultiline("Observaciones")
 	solicitud := ui.ReadMultiline("Solicitud")
 
-	// Construimos la estructura de datos para enviar al servidor
-	pacienteData := map[string]interface{}{
+	expedienteData := map[string]interface{}{
 		"nombre":          nombre,
 		"apellidos":       apellidos,
 		"fechaNacimiento": fechaNacimiento,
@@ -353,27 +376,34 @@ func (c *client) updateData() {
 		"solicitud":       solicitud,
 	}
 
-	dataJSON, _ := json.Marshal(pacienteData)
-	encryptedData := encryptData(string(dataJSON), contraseña)
-	fmt.Println("Datos encriptados enviados:", encryptedData)
+	fmt.Println("1. Subir expediente")
+	fmt.Println("2. Borrar expediente")
+	choice := ui.ReadInt("Seleccione una opción")
 
-	res := c.sendRequest(api.Request{
-		Action:   api.ActionUpdateData,
-		Username: c.currentUser,
-		Token:    c.authToken,
-		Data:     encryptedData,
-	})
+	if choice == 1 {
+		dataJSON, _ := json.Marshal(expedienteData)
+		encryptedData := encryptData(string(dataJSON), contraseña)
+		res := c.sendRequest(api.Request{
+			Action:   api.ActionUpdateData,
+			Username: c.currentUser,
+			Token:    c.authToken,
+			Data:     encryptedData,
+		})
+		
+		if res.Success {
 
-	fmt.Println("Éxito:", res.Success)
-	fmt.Println("Mensaje:", res.Message)
-
+			fmt.Println("Éxito:", res.Success)
+		    fmt.Println("Mensaje:", res.Message)
+		}
+	} else {
+		fmt.Println("Expediente borrado. Volviendo al menú principal...")
+	}
 }
 
 func encryptData(text, password string) string {
 	// Generar clave desde la contraseña del usuario
 	key := obtenerSHA256(password)
 	
-
 	// Crear IV aleatorio
 	iv := make([]byte, 16)
 	_, err := rand.Read(iv)
@@ -419,7 +449,7 @@ func decryptData(encryptedText, password string) string {
 		fmt.Println("Error decodificando base64:", err)
 		return ""
 	}
-	fmt.Printf("[DEBUG] Datos decodificados: %x\n", decoded)
+	
 
 	// Verificar que los datos cifrados incluyen al menos 16 bytes para el IV
 	if len(decoded) < 16 {
