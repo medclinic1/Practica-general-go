@@ -55,7 +55,7 @@ type Token struct {
 }
 
 
-// generateToken crea un token aleatorio y define su caducidad.
+/*// generateToken crea un token aleatorio y define su caducidad.
 func generateToken() Token {
 	// Crear un token aleatorio de 32 bytes
 	tokenBytes := make([]byte, 32)
@@ -74,6 +74,7 @@ func generateToken() Token {
 		ExpiresAt: expiration,
 	}
 }
+	*/
 
 // Run es la única función exportada de este paquete.
 // Crea un client interno y ejecuta el bucle principal.
@@ -218,8 +219,7 @@ func (c *client) registerUser() {
 
 		if loginRes.Success {
 			c.currentUser = username
-			token:=generateToken()
-			c.authToken = token.Value
+			c.authToken = res.Token
 			fmt.Println("Login automático exitoso. Token guardado.")
 		} else {
 			fmt.Println("No se ha podido hacer login automático:", loginRes.Message)
@@ -501,14 +501,15 @@ func (c *client) sendRequest(req api.Request) api.Response {
 	/* creamos un cliente especial que no comprueba la validez de los certificados
 	esto es necesario por que usamos certificados autofirmados (para pruebas) */
 
-	//Verificar si el token sigue siendo válido
+	/*//Verificar si el token sigue siendo válido
 	if c.authToken == "" {
 		fmt.Println("Error: No hay token disponible.")
 		return api.Response{Success: false, Message: "No autenticado"}
 	}
+		*/
 
 	// Adjuntar el token en la solicitud
-	req.Token = c.authToken
+	//req.Token = c.authToken
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
