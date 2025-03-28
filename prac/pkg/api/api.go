@@ -8,6 +8,7 @@ const (
 	ActionFetchData  = "fetchData"
 	ActionUpdateData = "updateData"
 	ActionLogout     = "logout"
+	ActionEliminarData = "eliminarData"
 )
 
 // Request y Response como antes

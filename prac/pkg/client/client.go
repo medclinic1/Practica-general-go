@@ -37,7 +37,8 @@ import (
 	"prac/pkg/api"
 	"prac/pkg/ui"
 
-	
+	"strconv"
+
 )
 
 // client estructura interna no exportada que controla
@@ -257,65 +258,157 @@ func (c *client) loginUser() {
 // fetchData pide datos privados al servidor.
 // El servidor devuelve la data asociada al usuario logueado.
 func (c *client) fetchData() {
-	ui.ClearScreen()
-	fmt.Println("** Obtener datos del usuario **")
+    for {
+        ui.ClearScreen()
+        fmt.Println("** Expedientes Médicos **")
 
-	// Chequeo básico de que haya sesión
-	if c.currentUser == "" || c.authToken == "" {
-		fmt.Println("No estás logueado. Inicia sesión primero.")
-		return
-	}
+        // Verificar sesión
+        if c.currentUser == "" || c.authToken == "" {
+            fmt.Println("Debes iniciar sesión primero")
+            ui.ReadInput("\nPresione Enter para continuar...")
+            return
+        }
 
-	// Hacemos la request con ActionFetchData
-	res := c.sendRequest(api.Request{
-		Action:   api.ActionFetchData,
-		Username: c.currentUser,
-		Token:    c.authToken,
-	})
+        // Obtener datos del servidor
+        res := c.sendRequest(api.Request{
+            Action:   api.ActionFetchData,
+            Username: c.currentUser,
+            Token:    c.authToken,
+        })
 
-	
-	if !res.Success {
-        fmt.Println("Error:", res.Message)
-        return
-    }
+        if !res.Success {
+            fmt.Println("Error:", res.Message)
+            ui.ReadInput("\nPresione Enter para continuar...")
+            return
+        }
 
-    // Debug: Ver datos crudos
-    //fmt.Printf("[DEBUG] Datos recibidos: %s\n", res.Data)
+        // Deserializar expedientes
+        var expedientesJSON []string
+        if err := json.Unmarshal([]byte(res.Data), &expedientesJSON); err != nil {
+            fmt.Println("Error al deserializar lista de expedientes:", err)
+            ui.ReadInput("\nPresione Enter para continuar...")
+            return
+        }
 
-    // Primero: Deserializar el array de strings JSON
-    var expedientesJSON []string
-    if err := json.Unmarshal([]byte(res.Data), &expedientesJSON); err != nil {
-        fmt.Println("Error al deserializar lista de expedientes:", err)
-        return
-    }
+        // Mostrar todos los expedientes
+        var expedientes []map[string]interface{}
+        for _, expJSON := range expedientesJSON {
+            var expediente map[string]interface{}
+            if err := json.Unmarshal([]byte(expJSON), &expediente); err != nil {
+                fmt.Printf("Error al deserializar expediente: %v\n", err)
+                continue
+            }
+            expedientes = append(expedientes, expediente)
+            
+            fmt.Printf("\n=== Expediente ID: %v ===\n", expediente["id"])
+            fmt.Printf("Fecha: %v\n", expediente["fecha_creacion"])
 
-    // Procesar cada expediente
-    for _, expJSON := range expedientesJSON {
-        // Segundo: Deserializar cada expediente individual
-        var expediente map[string]interface{}
-        if err := json.Unmarshal([]byte(expJSON), &expediente); err != nil {
-            fmt.Printf("Error al deserializar expediente %s: %v\n", expJSON, err)
+            datosEnc, ok := expediente["datos"].(string)
+            if !ok {
+                fmt.Println("(Resumen no disponible)")
+                continue
+            }
+
+            datosMedicos := decryptData(datosEnc,contraseña)
+            if datosMedicos == "" {
+                fmt.Println("(Resumen no disponible)")
+                continue
+            }
+
+            mostrarDatosMedicos(datosMedicos)
+        }
+
+        // Opciones principales
+        fmt.Println("\nOpciones:")
+        fmt.Println("1. Eliminar un expediente")
+        fmt.Println("2. Actualizar un expediente")
+        fmt.Println("3. Volver al menú principal")
+        
+        choice, err := strconv.Atoi(ui.ReadInput("Seleccione una opción"))
+        if err != nil {
+            fmt.Println("Opción no válida")
+            ui.ReadInput("\nPresione Enter para continuar...")
             continue
         }
 
-        fmt.Printf("\n=== Expediente ID: %v ===\n", expediente["id"])
-        fmt.Printf("Fecha: %v\n", expediente["fecha_creacion"])
+        switch choice {
+        case 1: // Eliminar expediente
+            if len(expedientes) == 0 {
+                fmt.Println("No hay expedientes para eliminar")
+                ui.ReadInput("\nPresione Enter para continuar...")
+                continue
+            }
 
-        // Obtener y desencriptar datos médicos
-        datosEnc, ok := expediente["datos"].(string)
-        if !ok {
-            fmt.Println("(Formato de datos inválido)")
-            continue
+            idStr := ui.ReadInput("\nIntroduzca el ID del expediente a eliminar")
+            idEliminar, err := strconv.Atoi(idStr)
+            if err != nil {
+                fmt.Println("ID no válido")
+                ui.ReadInput("\nPresione Enter para continuar...")
+                continue
+            }
+            
+            // Verificar que el ID existe
+            existe := false
+            for _, exp := range expedientes {
+                if int(exp["id"].(float64)) == idEliminar {
+                    existe = true
+                    break
+                }
+            }
+
+            if !existe {
+                fmt.Printf("No existe un expediente con ID %d\n", idEliminar)
+                ui.ReadInput("\nPresione Enter para continuar...")
+                continue
+            }
+
+            // Confirmación
+            fmt.Printf("\n¿Está seguro que desea eliminar el expediente %d?\n", idEliminar)
+            fmt.Println("1. Confirmar eliminación")
+            fmt.Println("2. Cancelar")
+            
+            confirmStr := ui.ReadInput("Seleccione una opción")
+            confirmacion, err := strconv.Atoi(confirmStr)
+            if err != nil || (confirmacion != 1 && confirmacion != 2) {
+                fmt.Println("Opción no válida")
+                ui.ReadInput("\nPresione Enter para continuar...")
+                continue
+            }
+            
+            if confirmacion == 1 {
+                // Enviar solicitud de eliminación
+                deleteRes := c.sendRequest(api.Request{
+                    Action:   api.ActionEliminarData,
+                    Username: c.currentUser,
+                    Token:    c.authToken,
+                    Data:     idStr, // Enviar como string
+                })
+
+                // Mostrar resultado de la operación
+                if deleteRes.Success {
+                    fmt.Printf("\nÉxito: %s\n", deleteRes.Message)
+                } else {
+                    fmt.Printf("\nError: %s\n", deleteRes.Message)
+                }
+                
+                // Pausa para que el usuario vea el mensaje
+                ui.ReadInput("\nPresione Enter para continuar...")
+                
+                // Salir del switch para refrescar la lista
+                continue
+            }
+
+        case 2: // Actualizar expediente
+            fmt.Println("Función de actualización no implementada aún")
+            ui.ReadInput("\nPresione Enter para continuar...")
+
+        case 3: // Volver
+            return
+
+        default:
+            fmt.Println("Opción no válida")
+            ui.ReadInput("\nPresione Enter para continuar...")
         }
-
-        datosMedicos := decryptData(datosEnc,contraseña)
-        if datosMedicos == "" {
-            fmt.Println("(No se pudieron desencriptar los datos)")
-            continue
-        }
-
-        // Mostrar datos médicos
-        mostrarDatosMedicos(datosMedicos)
     }
 }
 
