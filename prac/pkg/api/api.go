@@ -9,6 +9,7 @@ const (
 	ActionUpdateData = "updateData"
 	ActionLogout     = "logout"
 	ActionEliminarData = "eliminarData"
+	ActionActualizarData ="actualizarData"
 )
 
 // Request y Response como antes

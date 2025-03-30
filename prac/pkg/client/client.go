@@ -31,7 +31,7 @@ import (
 	"net/http"
 	"os"
 	"syscall"
-	"time"
+
 
 	"golang.org/x/term"
 	"prac/pkg/api"
@@ -49,33 +49,6 @@ type client struct {
 	authToken   string
 }
 
-// Token representa un token con una fecha de expiración.
-type Token struct {
-	Value     string
-	ExpiresAt time.Time
-}
-
-
-/*// generateToken crea un token aleatorio y define su caducidad.
-func generateToken() Token {
-	// Crear un token aleatorio de 32 bytes
-	tokenBytes := make([]byte, 32)
-	_, err := rand.Read(tokenBytes)
-	if err != nil {
-		panic("Error generando token")
-	}
-
-	tokenValue := base64.StdEncoding.EncodeToString(tokenBytes)
-
-	// Definir una duración del token (por ejemplo, 15 minutos)
-	expiration := time.Now().Add(15 * time.Minute)
-
-	return Token{
-		Value:     tokenValue,
-		ExpiresAt: expiration,
-	}
-}
-	*/
 
 // Run es la única función exportada de este paquete.
 // Crea un client interno y ejecuta el bucle principal.
@@ -255,6 +228,10 @@ func (c *client) loginUser() {
 	}
 }
 
+
+
+
+
 // fetchData pide datos privados al servidor.
 // El servidor devuelve la data asociada al usuario logueado.
 func (c *client) fetchData() {
@@ -301,7 +278,7 @@ func (c *client) fetchData() {
             expedientes = append(expedientes, expediente)
             
             fmt.Printf("\n=== Expediente ID: %v ===\n", expediente["id"])
-            fmt.Printf("Fecha: %v\n", expediente["fecha_creacion"])
+            fmt.Printf("Fecha de creación: %v\n", expediente["fecha_creacion"])
 
             datosEnc, ok := expediente["datos"].(string)
             if !ok {
@@ -399,8 +376,122 @@ func (c *client) fetchData() {
             }
 
         case 2: // Actualizar expediente
-            fmt.Println("Función de actualización no implementada aún")
-            ui.ReadInput("\nPresione Enter para continuar...")
+
+		if len(expedientes) == 0 {
+			fmt.Println("No hay expedientes para actualizar")
+			ui.ReadInput("\nPresione Enter para continuar...")
+			continue
+		}
+	
+		idStr := ui.ReadInput("\nIntroduzca el ID del expediente que quiere actualizar")
+		idActualizar, err := strconv.Atoi(idStr)
+		if err != nil {
+			fmt.Println("ID no válido")
+			ui.ReadInput("\nPresione Enter para continuar...")
+			continue
+		}
+		
+		// Buscar el expediente específico
+		var expedienteActual map[string]interface{}
+		var datosOriginales string
+		encontrado := false
+		
+		for _, exp := range expedientes {
+			if int(exp["id"].(float64)) == idActualizar {
+				expedienteActual = exp
+				datosOriginales = decryptData(exp["datos"].(string), contraseña)
+				encontrado = true
+				break
+			}
+		}
+	
+		if !encontrado {
+			fmt.Printf("No existe un expediente con ID %d\n", idActualizar)
+			ui.ReadInput("\nPresione Enter para continuar...")
+			continue
+		}
+	
+		// Mostrar el expediente actual
+		ui.ClearScreen()
+		fmt.Printf("=== Editando Expediente ID: %v ===\n", expedienteActual["id"])
+		fmt.Printf("Fecha creación: %v\n", expedienteActual["fecha_creacion"])
+		fmt.Println("-------------------------------------------------")
+		
+		var datosOriginal map[string]interface{}
+		if err := json.Unmarshal([]byte(datosOriginales), &datosOriginal); err != nil {
+			fmt.Println("Error al procesar datos médicos:", err)
+			ui.ReadInput("\nPresione Enter para continuar...")
+			continue
+		}
+		
+		// Mostrar datos actuales
+		fmt.Println("Datos actuales:")
+		mostrarDatosMedicos(datosOriginales)
+		fmt.Println("\nIntroduzca los nuevos valores (deje en blanco para mantener el valor actual):")
+	
+		// Leer nuevos valores
+		nombre := ui.ReadInputWithDefault("Nombre paciente", datosOriginal["nombre"].(string))
+		apellidos := ui.ReadInputWithDefault("Apellidos paciente", datosOriginal["apellidos"].(string))
+		fechaNacimiento := ui.ReadInputWithDefault("Fecha de nacimiento (YYYY-MM-DD)", datosOriginal["fechaNacimiento"].(string))
+		sip := ui.ReadIntWithDefault("SIP", fmt.Sprintf("%d", int(datosOriginal["sip"].(float64))))
+		sexo := ui.ReadInputWithDefault("Sexo (M/F)", datosOriginal["sexo"].(string))
+		observaciones := ui.ReadMultilineWithDefault("Observaciones", datosOriginal["observaciones"].(string))
+		solicitud := ui.ReadMultilineWithDefault("Solicitud", datosOriginal["solicitud"].(string))
+	
+		// Mostrar opciones de confirmación
+		ui.ClearScreen()
+		fmt.Println("=== Resumen de cambios ===")
+		fmt.Println("Cambios a aplicar:")
+		
+		nuevoExpediente := map[string]interface{}{
+			"nombre":          nombre,
+			"apellidos":       apellidos,
+			"fechaNacimiento": fechaNacimiento,
+			"sip":            sip,
+			"sexo":           sexo,
+			"observaciones":  observaciones,
+			"solicitud":      solicitud,
+		}
+		
+		mostrarDatosMedicosSideBySide(datosOriginal, nuevoExpediente)
+		
+		fmt.Println("\nOpciones:")
+		fmt.Println("1. Confirmar actualización")
+		fmt.Println("2. Cancelar y volver")
+		
+		opcion := ui.ReadInt("Seleccione una opción")
+		if opcion == 1 {
+			// Serializar y encriptar los nuevos datos
+			dataJSON, _ := json.Marshal(nuevoExpediente)
+			encryptedData := encryptData(string(dataJSON), contraseña)
+			
+			// Crear estructura con ID y datos nuevos
+			updateData := map[string]interface{}{
+				"id":   idActualizar,
+				"data": encryptedData,
+			}
+			updateDataJSON, _ := json.Marshal(updateData)
+			
+			// Enviar solicitud de actualización
+			updateRes := c.sendRequest(api.Request{
+				Action:   api.ActionActualizarData,
+				Username: c.currentUser,
+				Token:    c.authToken,
+				Data:     string(updateDataJSON),
+			})
+	
+			if updateRes.Success {
+				fmt.Printf("\nÉxito: %s\n", updateRes.Message)
+			} else {
+				fmt.Printf("\nError: %s\n", updateRes.Message)
+			}
+		} else {
+			fmt.Println("Actualización cancelada")
+		}
+		
+		ui.ReadInput("\nPresione Enter para continuar...")
+		continue
+           
 
         case 3: // Volver
             return
@@ -418,7 +509,7 @@ func mostrarDatosMedicos(datos string) {
         Nombre         string  `json:"nombre"`
         Apellidos     string  `json:"apellidos"`
         FechaNacimiento string `json:"fechaNacimiento"`
-        SIP           float64 `json:"sip"`
+        SIP           int `json:"sip"`
         Sexo          string  `json:"sexo"`
         Observaciones string  `json:"observaciones"`
         Solicitud     string  `json:"solicitud"`
@@ -434,11 +525,36 @@ func mostrarDatosMedicos(datos string) {
     fmt.Println("-------------------------------------------------")
     fmt.Printf("| %-15s | %-15s | %-15s |\n", info.Nombre, info.Apellidos, info.FechaNacimiento)
     fmt.Println("-------------------------------------------------")
-    fmt.Printf("SIP: %.0f | Sexo: %s\n", info.SIP, info.Sexo)
+    fmt.Printf("SIP: %d | Sexo: %s\n", info.SIP, info.Sexo)
     fmt.Println("Observaciones:", info.Observaciones)
     fmt.Println("Solicitud:", info.Solicitud)
     fmt.Println("-------------------------------------------------")
 }
+
+// Función para mostrar datos antiguos y nuevos lado a lado
+func mostrarDatosMedicosSideBySide(viejo, nuevo map[string]interface{}) {
+    fmt.Println("-------------------------------------------------")
+    fmt.Printf("| %-20s | %-20s | %-20s |\n", "Campo", "Valor Actual", "Nuevo Valor")
+    fmt.Println("-------------------------------------------------")
+    
+    campos := []string{"nombre", "apellidos", "fechaNacimiento", "sip", "sexo"}
+    for _, campo := range campos {
+        oldVal := fmt.Sprintf("%v", viejo[campo])
+        newVal := fmt.Sprintf("%v", nuevo[campo])
+        fmt.Printf("| %-20s | %-20s | %-20s |\n", campo, oldVal, newVal)
+    }
+    
+    fmt.Println("-------------------------------------------------")
+    fmt.Println("Observaciones:")
+    fmt.Println("Actual:", viejo["observaciones"])
+    fmt.Println("Nuevo:", nuevo["observaciones"])
+    fmt.Println("-------------------------------------------------")
+    fmt.Println("Solicitud:")
+    fmt.Println("Actual:", viejo["solicitud"])
+    fmt.Println("Nuevo:", nuevo["solicitud"])
+    fmt.Println("-------------------------------------------------")
+}
+
 
 // updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
 func (c *client) createExpediente() {
@@ -623,16 +739,6 @@ func (c *client) logoutUser() {
 func (c *client) sendRequest(req api.Request) api.Response {
 	/* creamos un cliente especial que no comprueba la validez de los certificados
 	esto es necesario por que usamos certificados autofirmados (para pruebas) */
-
-	/*//Verificar si el token sigue siendo válido
-	if c.authToken == "" {
-		fmt.Println("Error: No hay token disponible.")
-		return api.Response{Success: false, Message: "No autenticado"}
-	}
-		*/
-
-	// Adjuntar el token en la solicitud
-	//req.Token = c.authToken
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},

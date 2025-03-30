@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -118,3 +119,51 @@ func PrintProgressBar(progress, total int, width int) {
 		fmt.Println()
 	}
 }
+
+// ReadInputWithDefault muestra un prompt y permite al usuario introducir un valor o mantener el predeterminado
+func ReadInputWithDefault(prompt, defaultValue string) string {
+    fmt.Printf("%s [%s]: ", prompt, defaultValue)
+    reader := bufio.NewReader(os.Stdin)
+    input, _ := reader.ReadString('\n')
+    input = strings.TrimSpace(input)
+    
+    if input == "" {
+        return defaultValue
+    }
+    return input
+}
+
+// ReadIntWithDefault similar a ReadInputWithDefault pero para enteros
+func ReadIntWithDefault(prompt, defaultValue string) int {
+    for {
+        input := ReadInputWithDefault(prompt, defaultValue)
+        val, err := strconv.Atoi(input)
+        if err == nil {
+            return val
+        }
+        fmt.Println("Por favor, introduzca un número válido")
+    }
+}
+
+// ReadMultilineWithDefault para campos multilínea
+func ReadMultilineWithDefault(prompt, defaultValue string) string {
+    fmt.Printf("%s (actual:)\n%s\n", prompt, defaultValue)
+    fmt.Println("Introduzca el nuevo valor (multilínea, termine con una línea que contenga sólo '.'):")
+    
+    var lines []string
+    scanner := bufio.NewScanner(os.Stdin)
+    for scanner.Scan() {
+        line := scanner.Text()
+        if line == "." {
+            break
+        }
+        lines = append(lines, line)
+    }
+    
+    if len(lines) == 0 {
+        return defaultValue
+    }
+    return strings.Join(lines, "\n")
+}
+
+
