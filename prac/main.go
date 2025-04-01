@@ -48,8 +48,6 @@ func main() {
 	// Solicitar la clave maestra al inicio
 	masterKey = readMasterKey()
 
-
-
 	log.Println("Clave maestra establecida.")
 
 	log.Println("Iniciando servidor...")

@@ -173,14 +173,14 @@ type server struct {
 	tokenCounter int64       // contador para generar tokens
 }
 
+
+
+var key [] byte
 // Run inicia la base de datos y arranca el servidor HTTP.
 func Run(clavemaestra string) error {
 
-	key := obtenerSHA256(clavemaestra)
-	err := os.WriteFile("key.txt", []byte(key), 0755)
-	if err != nil {
-		fmt.Printf("unable to write file: %v", err)
-	}
+	key = obtenerSHA256(clavemaestra)
+
 
 	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
@@ -366,11 +366,7 @@ func (s *server) fetchData(req api.Request) api.Response {
 	//log.Println("[fetchData] Iniciando función para usuario:", req.Username)
 
 	// Leer key e iv del servidor
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-	}
+	
 
 	iv, err := os.ReadFile("iv.txt")
 	if err != nil {
@@ -471,11 +467,7 @@ func descifrarBytes(ciphertext, key, iv []byte) (string, error) {
 func (s *server) updateData(req api.Request) api.Response {
 
 	// Leer key e iv para el servidor (segunda capa de encriptación)
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] No se pudo leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-	}
+	
 
 	iv, err := os.ReadFile("iv.txt")
 	if err != nil {
@@ -583,13 +575,7 @@ func (s *server) eliminarexpediente(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "ID de expediente no válido"}
 	}
 
-	// Leer key e iv
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error interno del servidor"}
-	}
-
+	
 	iv, err := os.ReadFile("iv.txt")
 	if err != nil {
 		log.Printf("[ERROR] Error al leer iv.txt: %v\n", err)
@@ -706,11 +692,7 @@ func (s *server) eliminarexpediente(req api.Request) api.Response {
 // actualizarData maneja la actualización de expedientes médicos existentes
 func (s *server) actualizarData(req api.Request) api.Response {
     // Leer key e iv para el servidor (segunda capa de encriptación)
-    key, err := os.ReadFile("key.txt")
-    if err != nil {
-        log.Printf("[ERROR] No se pudo leer key.txt: %v\n", err)
-        return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-    }
+   
 
     iv, err := os.ReadFile("iv.txt")
     if err != nil {
