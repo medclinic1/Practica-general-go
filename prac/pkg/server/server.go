@@ -369,18 +369,6 @@ func (s *server) loginUser(req api.Request) api.Response {
 func (s *server) fetchData(req api.Request) api.Response {
 	//log.Println("[fetchData] Iniciando función para usuario:", req.Username)
 
-	// Leer key e iv del servidor
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-	}
-
-	iv, err := os.ReadFile("iv.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer iv.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer vector de inicialización"}
-	}
 
 	// Validar credenciales
 	if req.Username == "" || req.Token == "" {
@@ -473,14 +461,6 @@ func descifrarBytes(ciphertext, key, iv []byte) (string, error) {
 
 // updateData maneja la creación de nuevos expedientes médicos en 'userdata' con logs de depuración
 func (s *server) updateData(req api.Request) api.Response {
-
-	// Leer key e iv para el servidor (segunda capa de encriptación)
-	
-
-	if err != nil {
-		log.Printf("[ERROR] No se pudo leer iv: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer vector de inicialización"}
-	}
 
 	// Validar credenciales
 	if req.Username == "" || req.Token == "" {
@@ -582,18 +562,7 @@ func (s *server) eliminarexpediente(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "ID de expediente no válido"}
 	}
 
-	// Leer key e iv
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error interno del servidor"}
-	}
-
-	iv, err := os.ReadFile("iv.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer iv.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error interno del servidor"}
-	}
+	
 
 	// Obtener datos encriptados
 	encryptedData, err := s.db.Get("userdata", []byte(req.Username))
@@ -702,18 +671,6 @@ func (s *server) eliminarexpediente(req api.Request) api.Response {
 
 // actualizarData maneja la actualización de expedientes médicos existentes
 func (s *server) actualizarData(req api.Request) api.Response {
-    // Leer key e iv para el servidor (segunda capa de encriptación)
-    key, err := os.ReadFile("key.txt")
-    if err != nil {
-        log.Printf("[ERROR] No se pudo leer key.txt: %v\n", err)
-        return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-    }
-
-    iv, err := os.ReadFile("iv.txt")
-    if err != nil {
-        log.Printf("[ERROR] No se pudo leer iv.txt: %v\n", err)
-        return api.Response{Success: false, Message: "Error al leer vector de inicialización"}
-    }
 
 	// Validar credenciales
 	if req.Username == "" || req.Token == "" {
