@@ -436,6 +436,30 @@ func mostrarDatosMedicos(datos string) {
 	fmt.Println("-------------------------------------------------")
 }
 
+// Función para mostrar datos antiguos y nuevos lado a lado
+func mostrarDatosMedicosSideBySide(viejo, nuevo map[string]interface{}) {
+	fmt.Println("-------------------------------------------------")
+	fmt.Printf("| %-20s | %-20s | %-20s |\n", "Campo", "Valor Actual", "Nuevo Valor")
+	fmt.Println("-------------------------------------------------")
+
+	campos := []string{"nombre", "apellidos", "fechaNacimiento", "sip", "sexo"}
+	for _, campo := range campos {
+		oldVal := fmt.Sprintf("%v", viejo[campo])
+		newVal := fmt.Sprintf("%v", nuevo[campo])
+		fmt.Printf("| %-20s | %-20s | %-20s |\n", campo, oldVal, newVal)
+	}
+
+	fmt.Println("-------------------------------------------------")
+	fmt.Println("Observaciones:")
+	fmt.Println("Actual:", viejo["observaciones"])
+	fmt.Println("Nuevo:", nuevo["observaciones"])
+	fmt.Println("-------------------------------------------------")
+	fmt.Println("Solicitud:")
+	fmt.Println("Actual:", viejo["solicitud"])
+	fmt.Println("Nuevo:", nuevo["solicitud"])
+	fmt.Println("-------------------------------------------------")
+}
+
 // updateData pide nuevo texto y lo envía al servidor con ActionUpdateData.
 func (c *client) createExpediente() {
 	ui.ClearScreen()

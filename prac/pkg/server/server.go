@@ -243,6 +243,8 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 		res = s.logoutUser(req)
 	case api.ActionEliminarData:
 		res = s.eliminarexpediente(req)
+	case api.ActionActualizarData:
+		res = s.actualizarData(req)
 	default:
 		res = api.Response{Success: false, Message: "Acción desconocida"}
 	}
@@ -400,10 +402,6 @@ func (s *server) fetchData(req api.Request) api.Response {
 		}
 	}
 
-	// Debug: Ver formato de los datos almacenados
-	log.Printf("[DEBUG] Primeros bytes de datos almacenados: %x\n", encryptedData[:32])
-	log.Printf("[DEBUG] Datos como string: %s\n", string(encryptedData))
-
 	// Intentar descifrar (2 enfoques)
 	var decryptedData string
 	var decryptionError error
@@ -522,7 +520,7 @@ func (s *server) updateData(req api.Request) api.Response {
 	// Crear nuevo expediente (ya viene encriptado del cliente)
 	nuevoExpediente := map[string]interface{}{
 		"id":             count + 1,
-		"fecha_creacion": time.Now().Format(time.RFC3339),
+		"fecha_creacion": time.Now().Format("02/01/2006 15:04:05"),
 		"datos":          req.Data, // Mantenemos los datos pre-encriptados
 	}
 
@@ -564,6 +562,7 @@ func (s *server) updateData(req api.Request) api.Response {
 	}
 }
 
+// Elimina de la base de datos un expediente según un ID de expediente
 func (s *server) eliminarexpediente(req api.Request) api.Response {
 	log.Println("[eliminarexpediente] Iniciando eliminación de expediente")
 
@@ -701,6 +700,123 @@ func (s *server) eliminarexpediente(req api.Request) api.Response {
 		Message: fmt.Sprintf("Expediente %d eliminado correctamente", idEliminar),
 	}
 }
+
+
+
+// actualizarData maneja la actualización de expedientes médicos existentes
+func (s *server) actualizarData(req api.Request) api.Response {
+    // Leer key e iv para el servidor (segunda capa de encriptación)
+    key, err := os.ReadFile("key.txt")
+    if err != nil {
+        log.Printf("[ERROR] No se pudo leer key.txt: %v\n", err)
+        return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
+    }
+
+    iv, err := os.ReadFile("iv.txt")
+    if err != nil {
+        log.Printf("[ERROR] No se pudo leer iv.txt: %v\n", err)
+        return api.Response{Success: false, Message: "Error al leer vector de inicialización"}
+    }
+
+    // Validar credenciales
+    if req.Username == "" || req.Token == "" {
+        return api.Response{Success: false, Message: "Faltan credenciales"}
+    }
+    if !s.isTokenValid(req.Username, req.Token) {
+        return api.Response{Success: false, Message: "Token inválido o sesión expirada"}
+    }
+
+    // Parsear los datos de actualización (ID + nuevos datos)
+    var updateRequest struct {
+        ID   int    `json:"id"`
+        Data string `json:"data"` // Datos ya encriptados por el cliente
+    }
+    if err := json.Unmarshal([]byte(req.Data), &updateRequest); err != nil {
+        log.Printf("[ERROR] Error al parsear datos de actualización: %v\n", err)
+        return api.Response{Success: false, Message: "Formato de datos inválido"}
+    }
+
+    // Obtener datos existentes
+    encryptedData, err := s.db.Get("userdata", []byte(req.Username))
+    if err != nil {
+        log.Printf("[ERROR] Error al leer datos existentes: %v\n", err)
+        return api.Response{Success: false, Message: "Error al leer datos existentes"}
+    }
+
+    if len(encryptedData) == 0 {
+        return api.Response{Success: false, Message: "No hay expedientes para actualizar"}
+    }
+
+    // Desencriptar la lista completa (segunda capa)
+    decryptedList, err := descifrarString(string(encryptedData), key, iv)
+    if err != nil {
+        log.Printf("[ERROR] Error al descifrar lista existente: %v\n", err)
+        return api.Response{Success: false, Message: "Error al descifrar datos existentes"}
+    }
+
+    // Extraer expedientes
+    var expedientes []string
+    if err := json.Unmarshal([]byte(decryptedList), &expedientes); err != nil {
+        log.Printf("[ERROR] Error al decodificar lista JSON: %v\n", err)
+        return api.Response{Success: false, Message: "Error al procesar expedientes"}
+    }
+
+    // Buscar y actualizar el expediente
+    expedienteEncontrado := false
+    var nuevosExpedientes []string
+
+    for _, exp := range expedientes {
+        var expediente map[string]interface{}
+        if err := json.Unmarshal([]byte(exp), &expediente); err != nil {
+            log.Printf("[WARN] Error al decodificar expediente, omitiendo: %v\n", err)
+            nuevosExpedientes = append(nuevosExpedientes, exp)
+            continue
+        }
+
+        // Verificar si es el expediente a actualizar
+        if int(expediente["id"].(float64)) == updateRequest.ID {
+            expedienteEncontrado = true
+            // Actualizar solo los datos, mantener ID y fecha de creación
+            expediente["datos"] = updateRequest.Data
+            expedienteActualizado, _ := json.Marshal(expediente)
+            nuevosExpedientes = append(nuevosExpedientes, string(expedienteActualizado))
+            log.Printf("[actualizarData] Expediente %d actualizado\n", updateRequest.ID)
+        } else {
+            nuevosExpedientes = append(nuevosExpedientes, exp)
+        }
+    }
+
+    if !expedienteEncontrado {
+        return api.Response{Success: false, Message: fmt.Sprintf("Expediente con ID %d no encontrado", updateRequest.ID)}
+    }
+
+    // Serializar lista completa actualizada
+    listaJSON, err := json.Marshal(nuevosExpedientes)
+    if err != nil {
+        log.Printf("[ERROR] Error al serializar lista actualizada: %v\n", err)
+        return api.Response{Success: false, Message: "Error al preparar datos para almacenamiento"}
+    }
+
+    // Encriptar la lista completa (segunda capa)
+    encryptedList, err := cifrarString(string(listaJSON), key, iv)
+    if err != nil {
+        log.Printf("[ERROR] Error al encriptar lista actualizada: %v\n", err)
+        return api.Response{Success: false, Message: "Error al cifrar datos"}
+    }
+
+    // Guardar en la base de datos
+    if err := s.db.Put("userdata", []byte(req.Username), []byte(encryptedList)); err != nil {
+        log.Printf("[ERROR] Error al guardar en BD: %v\n", err)
+        return api.Response{Success: false, Message: "Error al guardar expediente actualizado"}
+    }
+
+    return api.Response{
+        Success: true,
+        Message: fmt.Sprintf("Expediente médico con ID %d actualizado correctamente", updateRequest.ID),
+        Data:    fmt.Sprintf("%d", updateRequest.ID),
+    }
+}
+
 
 // logoutUser borra la sesión en 'sessions', invalidando el token.
 func (s *server) logoutUser(req api.Request) api.Response {
