@@ -422,7 +422,7 @@ func (s *server) fetchData(req api.Request) api.Response {
 		}
 		log.Println("[fetchData] Descifrado exitoso (enfoque binario)")
 	} else {
-		log.Println("[fetchData] Descifrado exitoso (enfoque base64)")
+		log.Println()
 	}
 
 	// Verificar si es JSON válido

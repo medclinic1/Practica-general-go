@@ -259,6 +259,32 @@ func (c *client) fetchData() {
             return
         }
 
+		if res.Message == "El usuario no tiene expedientes médicos" {
+            fmt.Println("\nNo hay expedientes médicos creados.")
+            fmt.Println("\nOpciones:")
+            fmt.Println("1. Crear nuevo expediente")
+            fmt.Println("2. Volver al menú principal")
+            
+            choice, err := strconv.Atoi(ui.ReadInput("Seleccione una opción"))
+            if err != nil {
+                fmt.Println("Opción no válida")
+                ui.ReadInput("\nPresione Enter para continuar...")
+                continue
+            }
+
+            switch choice {
+            case 1:
+                c.createExpediente()
+                continue
+            case 2:
+                return
+            default:
+                fmt.Println("Opción no válida")
+                ui.ReadInput("\nPresione Enter para continuar...")
+                continue
+            }
+        }
+
         // Deserializar expedientes
         var expedientesJSON []string
         if err := json.Unmarshal([]byte(res.Data), &expedientesJSON); err != nil {
