@@ -28,8 +28,6 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-var iv []byte
-
 func check(e error) {
 	if e != nil {
 		panic(e)
@@ -181,14 +179,12 @@ type server struct {
 	tokenCounter int64       // contador para generar tokens
 }
 
+var key []byte
+
 // Run inicia la base de datos y arranca el servidor HTTP.
 func Run(clavemaestra string) error {
 
-	key := obtenerSHA256(clavemaestra)
-	err := os.WriteFile("key.txt", []byte(key), 0755)
-	if err != nil {
-		fmt.Printf("unable to write file: %v", err)
-	}
+	key = obtenerSHA256(clavemaestra)
 
 	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
@@ -360,7 +356,6 @@ func (s *server) loginUser(req api.Request) api.Response {
 	}
 
 	//El iv debe ser diferente, generado en función del nombre del usuario cada vez que se inicia el servidor
-	iv = generateIv(req.Username)
 
 	return api.Response{Success: true, Message: "Login exitoso", Token: token}
 }
@@ -368,13 +363,7 @@ func (s *server) loginUser(req api.Request) api.Response {
 // fetchData verifica el token y retorna todos los expedientes médicos desencriptados
 func (s *server) fetchData(req api.Request) api.Response {
 	//log.Println("[fetchData] Iniciando función para usuario:", req.Username)
-
-	// Leer key e iv del servidor
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-	}
+	iv := generateIv(req.Username)
 
 	// Validar credenciales
 	if req.Username == "" || req.Token == "" {
@@ -467,18 +456,7 @@ func descifrarBytes(ciphertext, key, iv []byte) (string, error) {
 
 // updateData maneja la creación de nuevos expedientes médicos en 'userdata' con logs de depuración
 func (s *server) updateData(req api.Request) api.Response {
-
-	// Leer key e iv para el servidor (segunda capa de encriptación)
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] No se pudo leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-	}
-
-	if err != nil {
-		log.Printf("[ERROR] No se pudo leer iv: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer vector de inicialización"}
-	}
+	iv := generateIv(req.Username)
 
 	// Validar credenciales
 	if req.Username == "" || req.Token == "" {
@@ -561,6 +539,7 @@ func (s *server) updateData(req api.Request) api.Response {
 
 // Elimina de la base de datos un expediente según un ID de expediente
 func (s *server) eliminarexpediente(req api.Request) api.Response {
+	iv := generateIv(req.Username)
 	log.Println("[eliminarexpediente] Iniciando eliminación de expediente")
 
 	// Validar credenciales
@@ -578,13 +557,6 @@ func (s *server) eliminarexpediente(req api.Request) api.Response {
 	if err != nil {
 		log.Printf("[ERROR] ID no válido: %v\n", err)
 		return api.Response{Success: false, Message: "ID de expediente no válido"}
-	}
-
-	// Leer key e iv
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] Error al leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error interno del servidor"}
 	}
 
 	// Obtener datos encriptados
@@ -694,12 +666,7 @@ func (s *server) eliminarexpediente(req api.Request) api.Response {
 
 // actualizarData maneja la actualización de expedientes médicos existentes
 func (s *server) actualizarData(req api.Request) api.Response {
-	// Leer key e iv para el servidor (segunda capa de encriptación)
-	key, err := os.ReadFile("key.txt")
-	if err != nil {
-		log.Printf("[ERROR] No se pudo leer key.txt: %v\n", err)
-		return api.Response{Success: false, Message: "Error al leer clave de encriptación"}
-	}
+	iv := generateIv(req.Username)
 
 	// Validar credenciales
 	if req.Username == "" || req.Token == "" {
