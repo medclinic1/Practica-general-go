@@ -473,8 +473,9 @@ func (s *server) updateData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al leer datos existentes"}
 	}
 
-	count := 0
+	
 	var expedientes []string // Solo almacenamos los datos encriptados
+	lastID := 0
 
 	if len(encryptedData) > 0 {
 		// Desencriptar la lista completa (segunda capa)
@@ -489,12 +490,22 @@ func (s *server) updateData(req api.Request) api.Response {
 			log.Printf("[WARN] Error al decodificar lista JSON, iniciando nueva: %v\n", err)
 			expedientes = []string{}
 		}
-		count = len(expedientes)
+
+		if len(expedientes) > 0 {
+			// Deserializar el último expediente para obtener su ID
+			var lastExpediente map[string]interface{}
+			if err := json.Unmarshal([]byte(expedientes[len(expedientes)-1]), &lastExpediente); err == nil {
+				if id, ok := lastExpediente["id"].(float64); ok {
+					lastID = int(id)
+				}
+			}
+		}
+		
 	}
 
 	// Crear nuevo expediente (ya viene encriptado del cliente)
 	nuevoExpediente := map[string]interface{}{
-		"id":             count + 1,
+		"id":             lastID + 1,
 		"fecha_creacion": time.Now().Format("02/01/2006 15:04:05"),
 		"datos":          req.Data, // Mantenemos los datos pre-encriptados
 	}
@@ -529,11 +540,11 @@ func (s *server) updateData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al guardar expediente"}
 	}
 
-	log.Printf("[updateData] Expediente guardado correctamente. Total: %d\n", count+1)
+	log.Printf("[updateData] Expediente guardado correctamente. Total: %d\n", lastID+1)
 	return api.Response{
 		Success: true,
-		Message: fmt.Sprintf("Expediente médico creado con ID %d", count+1),
-		Data:    fmt.Sprintf("%d", count+1),
+		Message: fmt.Sprintf("Expediente médico creado con ID %d", lastID+1),
+		Data:    fmt.Sprintf("%d", lastID+1),
 	}
 }
 
