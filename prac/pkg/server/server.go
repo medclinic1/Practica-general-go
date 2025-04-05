@@ -25,6 +25,7 @@ import (
 
 	"strconv"
 
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/scrypt"
 )
 
@@ -181,6 +182,9 @@ type server struct {
 
 var key []byte
 
+// Secret key for signing JWTs (use a secure, random key in production)
+var jwtSecret = []byte("your-secure-secret-key")
+
 // Run inicia la base de datos y arranca el servidor HTTP.
 func Run(clavemaestra string) error {
 
@@ -259,15 +263,23 @@ func (s *server) apiHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // generateToken crea un token aleatorio
-func (s *server) generateToken() (string, int64) {
-	tokenBytes := make([]byte, 32)
-	_, err := rand.Read(tokenBytes)
-	if err != nil {
-		panic("Error generando token")
+func (s *server) generateToken(username string) (string, error) {
+	// Define the claims for the token
+	claims := jwt.MapClaims{
+		"username": username,
+		"exp":      time.Now().Add(24 * time.Hour).Unix(), // Token expires in 24 hours
 	}
-	timestamp := time.Now().Unix() // Current Unix timestamp
-	token := base64.StdEncoding.EncodeToString(tokenBytes)
-	return token, timestamp
+
+	// Create the token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Sign the token with the secret key
+	signedToken, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return "", err
+	}
+
+	return signedToken, nil
 }
 
 // registerUser registra un nuevo usuario, si no existe.
@@ -341,21 +353,16 @@ func (s *server) loginUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al hashear contraseña"}
 	}
 
-	// Comparar
+	// Compare
 	if !bytes.Equal(hashedPassword, storedHash) {
 		return api.Response{Success: false, Message: "Credenciales inválidas"}
 	}
 
-	// Token
-	token, timestamp := s.generateToken()
-	sessionData := fmt.Sprintf("%s:%d", token, timestamp)
-
-	// Store the token and timestamp in 'sessions'
-	if err := s.db.Put("sessions", []byte(req.Username), []byte(sessionData)); err != nil {
-		return api.Response{Success: false, Message: "Error al crear sesión"}
+	// Generate JWT
+	token, err := s.generateToken(req.Username)
+	if err != nil {
+		return api.Response{Success: false, Message: "Error al generar token"}
 	}
-
-	//El iv debe ser diferente, generado en función del nombre del usuario cada vez que se inicia el servidor
 
 	return api.Response{Success: true, Message: "Login exitoso", Token: token}
 }
@@ -473,7 +480,6 @@ func (s *server) updateData(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al leer datos existentes"}
 	}
 
-	
 	var expedientes []string // Solo almacenamos los datos encriptados
 	lastID := 0
 
@@ -500,7 +506,7 @@ func (s *server) updateData(req api.Request) api.Response {
 				}
 			}
 		}
-		
+
 	}
 
 	// Crear nuevo expediente (ya viene encriptado del cliente)
@@ -816,34 +822,26 @@ func (s *server) userExists(username string) (bool, error) {
 // isTokenValid comprueba que el token almacenado en 'sessions'
 // coincida con el token proporcionado.
 func (s *server) isTokenValid(username, token string) bool {
-	storedSession, err := s.db.Get("sessions", []byte(username))
+	// Parse and validate the token
+	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		// Ensure the signing method is HMAC
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return jwtSecret, nil
+	})
+
 	if err != nil {
 		return false
 	}
 
-	// Split the stored session data into token and timestamp
-	parts := strings.Split(string(storedSession), ":")
-	if len(parts) != 2 {
-		return false
-	}
-	storedToken := parts[0]
-	storedTimestamp, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		return false
+	// Check the claims
+	if claims, ok := parsedToken.Claims.(jwt.MapClaims); ok && parsedToken.Valid {
+		// Ensure the username in the token matches the provided username
+		if claims["username"] == username {
+			return true
+		}
 	}
 
-	// Check if the token matches
-	if storedToken != token {
-		return false
-	}
-
-	// Check if the token is expired (e.g., 1 hour expiration)
-	expirationTime := int64(86400) // 1 day in seconds
-	//La otra función está en minutos
-	currentTime := time.Now().Unix()
-	if currentTime-storedTimestamp > expirationTime {
-		return false
-	}
-
-	return true
+	return false
 }

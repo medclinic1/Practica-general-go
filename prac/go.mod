@@ -14,4 +14,7 @@ require (
 
 )
 
-require golang.org/x/sys v0.31.0 // indirect
+require (
+	github.com/golang-jwt/jwt/v5 v5.2.2
+	golang.org/x/sys v0.31.0 // indirect
+)
