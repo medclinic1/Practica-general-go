@@ -203,6 +203,13 @@ func (c *client) registerUser() {
 }
 
 var contraseña string
+// Realiza un hash 512 y coge la mitad de la contraseña
+func hashcontraseña(contraseña string) string {
+
+	hash := sha512.Sum512([]byte(contraseña))
+	return base64.StdEncoding.EncodeToString(hash[:32])
+}
+
 
 func (c *client) loginUser() {
 	ui.ClearScreen()
@@ -210,7 +217,7 @@ func (c *client) loginUser() {
 
 	username := ui.ReadInput("Nombre de usuario")
 	password := readPassword("Contraseña: ")
-	contraseña = password
+	contraseña = hashcontraseña(password)
 	hashedPassword := hashPassword(password)
 
 	res := c.sendRequest(api.Request{
