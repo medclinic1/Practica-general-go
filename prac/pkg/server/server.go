@@ -183,12 +183,13 @@ type server struct {
 var key []byte
 
 // Secret key for signing JWTs (use a secure, random key in production)
-var jwtSecret = []byte("your-secure-secret-key")
+var jwtSecret []byte
 
 // Run inicia la base de datos y arranca el servidor HTTP.
 func Run(clavemaestra string) error {
 
 	key = obtenerSHA256(clavemaestra)
+	jwtSecret = key
 
 	// Abrimos la base de datos usando el motor bbolt
 	db, err := store.NewStore("bbolt", "data/server.db")
