@@ -322,6 +322,18 @@ func (s *server) registerUser(req api.Request) api.Response {
 		return api.Response{Success: false, Message: "Error al guardar credenciales"}
 	}
 
+	iv := generateIv(req.Username)
+	//Guardamos las claves pública y privada
+
+	if err := s.db.Put("clavesPub", []byte(req.Username), []byte(req.keyLogin)); err != nil {
+		return api.Response{Success: false, Message: "Error al guardar credenciales"}
+	}
+
+	criptdkey, err := cifrarString(string(req.keyData), key, iv)
+	if err := s.db.Put("clavesPri", []byte(req.Username), []byte(criptdkey)); err != nil {
+		return api.Response{Success: false, Message: "Error al guardar credenciales"}
+	}
+
 	// Creamos una entrada vacía para los datos en 'userdata'
 	if err := s.db.Put("userdata", []byte(req.Username), []byte("")); err != nil {
 		return api.Response{Success: false, Message: "Error al inicializar datos de usuario"}
